@@ -12,5 +12,6 @@ urlpatterns = [
     path("create_idea/", create_idea),
     path("get_all_ideas/", get_all_ideas),
     path("delete_idea/", delete_idea),
-    path("get_order/", get_order)
+    path("get_order/", get_order),
+    path("safe_order/", safe_order)
 ]

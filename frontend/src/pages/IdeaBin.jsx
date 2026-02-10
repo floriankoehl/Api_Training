@@ -23,21 +23,19 @@ export default function IdeaBin() {
     const order = await get_order()
     console.log("THe order: ", order)
     
-
-
     const res = await fetch(`${API}/get_all_ideas/`);
     const ideas = await res.json();
     
-    const idea_list = ideas.data
+    const idea_list = ideas?.data || []  // Fallback to empty array
    
-    console.log("HERE_______")
-    console.log("idea_list",  idea_list)
+    // console.log("HERE_______")
+    // console.log("idea_list",  idea_list)
     const idea_object = {}
     for (let i = 0; i < idea_list.length; i ++) {
         let idea = idea_list[i]
         idea_object[idea.id] = {...idea}
     }
-    console.log("UPDATRED ID OBJECT", idea_object)
+    // console.log("UPDATRED ID OBJECT", idea_object)
 
 
     setIdIdeaOrder(order)
@@ -48,8 +46,8 @@ export default function IdeaBin() {
 
   useEffect(() => {
 
-    const ideas = fetch_all_ideas();
-    console.log("Test", ideas)
+    fetch_all_ideas();
+    // console.log("Test", ideas)
 
     
 
@@ -91,8 +89,18 @@ export default function IdeaBin() {
   }
 
 
-  const safe_order = () => {
-
+  const safe_order = async (new_order) => {
+    const res = await fetch(`${API}/safe_order/`, {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+            order: new_order
+        })
+    })
+    const answer = await res.json()
+    console.log("answer_______", answer)
   }
 
 
@@ -101,7 +109,7 @@ export default function IdeaBin() {
   const get_order = async () => {
     const res = await fetch(`${API}/get_order/`)
     const answer = await res.json()
-    return answer.data.order
+    return answer?.data?.order || []  // Return empty array as fallback
   }
 
 
@@ -163,12 +171,17 @@ export default function IdeaBin() {
 
     const onMouseUp = () => {
         // Update the order array instead of the ideas object
+        let updated_order = ideaIdOrder
+
         setIdIdeaOrder((prevOrder) => {
           const newOrder = [...prevOrder]
           const [movedId] = newOrder.splice(from_index, 1)
           newOrder.splice(to_index, 0, movedId)
+          updated_order = newOrder
           return newOrder
         })
+
+        safe_order(updated_order)
 
         setDragging(null)
         setPrevIndex(null)
@@ -232,16 +245,19 @@ export default function IdeaBin() {
               
               
               
-              {ideaIdOrder.map((index) => {
-                const idea = ideas[index]
+              {ideaIdOrder.map((ideaId, arrayIndex) => {
+                // console.log("ideaId", ideaId)
+                // console.log("arrayIndex", arrayIndex)
+
+                const idea = ideas[ideaId]
                 if (!idea) return null
                 // console.log("idea: ", index,  idea)
                 return (
                     <div
-                    key={`${idea.name}_${index}`}>
+                    key={`${idea.name}_${ideaId}`}>
                         <div 
                         style={{
-                            opacity: index === hoverIndex ? 1 : 0,
+                            opacity: arrayIndex === hoverIndex ? 1 : 0,
                             transition: "opacity 100ms ease"
                         }}
                         className="w-full h-2  my-[2px] rounded bg-gray-700">
@@ -249,10 +265,10 @@ export default function IdeaBin() {
 
 
                         <div
-                            onMouseDown={(e)=>{handleDrag(e, idea, index)}}
+                            onMouseDown={(e)=>{handleDrag(e, idea, arrayIndex)}}
                             style={{
-                                backgroundColor: index === prevIndex ? "gray" : "black",
-                                transform: hoverIndex !== null && index >= hoverIndex && index !== prevIndex
+                                backgroundColor: arrayIndex === prevIndex ? "gray" : "black",
+                                transform: hoverIndex !== null && arrayIndex >= hoverIndex && arrayIndex !== prevIndex
                                   ? "translateY(10px)"
                                   : "translateY(0px)",
                                 transition: "transform 200ms ease, background-color 200ms ease",
@@ -287,12 +303,12 @@ export default function IdeaBin() {
                 style={{
                     top: `${dragging.y}px`,
                     left: `${dragging.x}px`,
-                    // transform: "translate(-100%, -100%)",
+                    transform: "translate(-100%, -100%)",
                     animation: "pickUp 150ms ease forwards",
                     
                 }}
                 
-                className="fixed h-10  bg-black/80 rounded mt-2 text-white px-2 flex justify-between items-center">
+                className="fixed h-10 shadow border border-white/20 shadow-gray-700 bg-black rounded mt-2 text-white px-2 flex justify-between items-center">
                   <div>{dragging.idea.name}</div>
                 </div>
               )}

@@ -135,5 +135,15 @@ def get_order(request):
 
 
 
+@api_view(["POST"])
+def safe_order(request):
+    new_order_list = request.data.get("order")
+    print("NEW ORDER SHOULD BE", new_order_list)
+    current_order_item = IdeaOrder.objects.get(id=1)
+    current_order_item.order = new_order_list
+    current_order_item.save()
+    print("updated: ", current_order_item.order)
+    return Response({"sucesfull": True})
+
 
 
