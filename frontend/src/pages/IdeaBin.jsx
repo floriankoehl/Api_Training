@@ -15,6 +15,8 @@ export default function IdeaBin() {
   const [prevIndex, setPrevIndex] = useState(null)
   const [hoverIndex, setHoverIndex] = useState(null)
   const IdeaListRef = useRef(null)
+  const blueRef = useRef(null)
+  const [isOverBlue, setIsOverBlue] = useState(false)
 
 
 
@@ -37,7 +39,7 @@ export default function IdeaBin() {
     }
     // console.log("UPDATRED ID OBJECT", idea_object)
 
-
+    console.log("ideas created: ", idea_object)
     setIdIdeaOrder(order)
     setIdeas(idea_object)
     // setIdeas(ideas.data);
@@ -103,14 +105,26 @@ export default function IdeaBin() {
     console.log("answer_______", answer)
   }
 
-
-
-
   const get_order = async () => {
     const res = await fetch(`${API}/get_order/`)
     const answer = await res.json()
     return answer?.data?.order || []  // Return empty array as fallback
   }
+
+  const set_category = async (idea_id_to_set, category_to_set) => {
+    const res = await fetch(`${API}/set_category/`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        idea_id: idea_id_to_set,
+        category: category_to_set
+      })
+    })
+  }
+
+
 
 
 
@@ -122,6 +136,7 @@ export default function IdeaBin() {
   const handleDrag = (event, idea, index) => {
     const from_index = index
     let to_index = index
+    let is_over = false
 
 
     let ghost = {
@@ -135,7 +150,9 @@ export default function IdeaBin() {
     setPrevIndex(index)
 
     const container = IdeaListRef.current
+    const container_rect = container.getBoundingClientRect()
     const idea_dom_elements = [...container.children]
+    const blue_rect = blueRef.current.getBoundingClientRect()
 
 
     const onMouseMove = (e) => {
@@ -147,8 +164,9 @@ export default function IdeaBin() {
         setDragging(ghost)
 
 
-
-        for (let i = 0; i < idea_dom_elements.length -1; i ++){
+        console.log("GHOST WIDTH", ghost)
+        if (ghost.x - 100 < container_rect.right) {
+               for (let i = 0; i < idea_dom_elements.length -1; i ++){
             const element = idea_dom_elements[i]
             const next_element = idea_dom_elements[i+1]
 
@@ -164,7 +182,26 @@ export default function IdeaBin() {
 
 
 
+          }
+        } else {
+          console.log("IS OVER THE BORDER")
+          setPrevIndex(null)
+          setHoverIndex(null)
+          if (ghost.x < blue_rect.right &&
+              ghost.x > blue_rect.left &&
+              ghost.y > blue_rect.top &&
+              ghost.y < blue_rect.bottom
+          ) {
+            setIsOverBlue(true)
+            is_over = true
+          } else {
+            setIsOverBlue(false)
+            is_over = false
+          }
+
+
         }
+   
 
 
     }
@@ -180,6 +217,12 @@ export default function IdeaBin() {
           updated_order = newOrder
           return newOrder
         })
+
+        if (is_over) {
+          console.log("IDEA MMMMMMMMMMMMMMMMMMMMMMMMMMMMMM: ", idea.id)
+          set_category(idea.id, "blue")
+        }
+
 
         safe_order(updated_order)
 
@@ -204,23 +247,42 @@ export default function IdeaBin() {
 
 
 
+
+
+
   return (
     <>
       <div className="h-screen w-screen p-10">
-        <div className="h-full w-full rounded bg-white flex shadow-xl">
+        <div className="h-full w-full rounded bg-white flex shadow-2xl border border-gray-300">
           <div className="w-1/4 select-none">
             {/* Form */}
-            <div className="h-2/10 bg-gray-100 p-2">
-              <h1 className="text-2xl">Create ideas</h1>
-              <div className="flex flex-col gap-1 md:gap-10">
+            <div className="h-4/10 bg-gray-100 p-2">
+              <h1 className="text-2xl mb-2">Create ideas</h1>
+              <div className="flex flex-col gap-1 md:gap-5">
                 <TextField
                   onChange={(e) => {
                     setIdeaBeingCreated(e.target.value);
                   }}
                   id="standard-basic"
                   label="Idea name"
-                  variant="standard"
+                  variant="outlined"
                 />
+                <TextField
+                  onChange={(e) => {
+                    setIdeaBeingCreated(e.target.value);
+                  }}
+                  multiline
+                  rows={4}
+                  
+                  id="idea-description"
+                  label="Description"
+                  variant="outlined"
+                  fullWidth
+                />
+       
+
+
+
                 <Button
                   onClick={() => {
                     create_idea();
@@ -258,9 +320,12 @@ export default function IdeaBin() {
                         <div 
                         style={{
                             opacity: arrayIndex === hoverIndex ? 1 : 0,
+                            transform: arrayIndex === hoverIndex
+                            ? "translateY(5px)"
+                            : "translateY(0px)",
                             transition: "opacity 100ms ease"
                         }}
-                        className="w-full h-2  my-[2px] rounded bg-gray-700">
+                        className="w-full h-2  my-[1px] rounded bg-gray-700">
                         </div>
 
 
@@ -278,7 +343,7 @@ export default function IdeaBin() {
                                             "
                             key={idea.name}
                         >
-                            <div>{idea.name}</div>
+                            <div>{idea.name}/Cat: {idea.category}</div>
                             <div>
                             <DeleteForeverIcon
                                 onClick={() => {
@@ -309,7 +374,7 @@ export default function IdeaBin() {
                 }}
                 
                 className="fixed h-10 shadow border border-white/20 shadow-gray-700 bg-black rounded mt-2 text-white px-2 flex justify-between items-center">
-                  <div>{dragging.idea.name}</div>
+                  <div>{dragging.idea.name}/Cat: {dragging.idea.category}</div>
                 </div>
               )}
 
@@ -326,7 +391,27 @@ export default function IdeaBin() {
           <div className="w-3/4 bg-red-200 flex select-none">
             <div className="bg-white h-full w-full">
               <div className="w-full h-1/2  flex">
-                <div className="w-1/2 h-full bg-blue-200"></div>
+                <div className="w-1/2 h-full bg-blue-200">
+                  <div className="h-1/7 ">
+                    <h1
+                    style={{
+                      color: "#040084" 
+                    }}
+                    className="px-5 text-[50px] font-bold"
+                    >Blue</h1>
+                  </div>
+                  <div className="h-6/7 p-5">
+                    <div 
+                    ref={blueRef}
+                    style={{
+                      backgroundColor: isOverBlue ? "#aca9ff" : "#ffffff"
+                    }}
+                    className="h-full w-full bg-white rounded">
+
+                    </div>
+                  </div>
+                    
+                </div>
                 <div className="w-1/2 h-full bg-yellow-200"></div>
               </div>
 

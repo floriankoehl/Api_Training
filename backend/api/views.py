@@ -101,6 +101,12 @@ def create_idea(request):
     print("correctly inside here", name_of_idea)
     idea, created = Idea.objects.get_or_create(name=name_of_idea)
     idea_serialized = IdeaSerializer(idea).data
+    idea_order = IdeaOrder.objects.get(id=1)
+    order = idea_order.order
+    order.append(idea.id)
+    idea_order.order = order   # reassign!
+    idea_order.save()
+
     return Response({"created": False, "idea": idea_serialized})
 
 
@@ -117,6 +123,8 @@ def delete_idea(request):
     idea_to_delete = request.data.get("name")
     idea = Idea.objects.get(name = idea_to_delete)
     idea.delete()
+
+    IdeaOrder.objects.get(id=1).recompute()
     return Response({"deleted": True})
 
 
@@ -143,7 +151,20 @@ def safe_order(request):
     current_order_item.order = new_order_list
     current_order_item.save()
     print("updated: ", current_order_item.order)
+    
     return Response({"sucesfull": True})
 
 
 
+@api_view(["POST"])
+def set_category(request):
+    print("Sucesfuly inside set category", request.data)
+    category = request.data.get("category")
+    idea_id = request.data.get("idea_id")
+    print("The idea: ", idea_id)
+    print("The category: ", category)
+    idea = Idea.objects.get(id=idea_id)
+    idea.category = category
+    idea.save()
+
+    return Response({"1":"1"})
