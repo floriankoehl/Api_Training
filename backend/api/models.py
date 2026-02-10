@@ -7,3 +7,17 @@ class Task(models.Model):
     x = models.IntegerField(default=0)
     y = models.IntegerField(default=0)
 
+
+
+
+
+
+
+
+
+class Idea(models.Model):
+    name = models.TextField()
+
+class IdeaOrder(models.Model):
+    order = models.JSONField(default=list)
+

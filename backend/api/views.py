@@ -2,7 +2,7 @@ from rest_framework.decorators import api_view
 from rest_framework.response import Response
 from rest_framework import serializers
 
-from .models import Task
+from .models import Task, Idea, IdeaOrder
 
 
 class TaskSerializer(serializers.ModelSerializer):
@@ -73,4 +73,67 @@ def update_x_and_y_of_tasks(request):
             y=task_data.get("y", 0),
         )
     return Response({"updated": True})
+
+
+
+
+
+
+# class TaskSerializer(serializers.ModelSerializer):
+#     class Meta:
+#         model = Task
+#         fields = "__all__"
+
+
+
+class IdeaSerializer(serializers.ModelSerializer):
+    class Meta: 
+        model = Idea
+        fields = "__all__"
+
+
+
+
+
+@api_view(["POST"])
+def create_idea(request):
+    name_of_idea = request.data.get("idea_name")
+    print("correctly inside here", name_of_idea)
+    idea, created = Idea.objects.get_or_create(name=name_of_idea)
+    idea_serialized = IdeaSerializer(idea).data
+    return Response({"created": False, "idea": idea_serialized})
+
+
+
+@api_view(["GET"])
+def get_all_ideas(request):
+    all_ideas = Idea.objects.all()
+    all_ideas_serialized = IdeaSerializer(all_ideas, many = True).data
+    return Response({"data": all_ideas_serialized})
+
+
+@api_view(["DELETE"])
+def delete_idea(request):
+    idea_to_delete = request.data.get("name")
+    idea = Idea.objects.get(name = idea_to_delete)
+    idea.delete()
+    return Response({"deleted": True})
+
+
+
+class IdeaOrderSerializer(serializers.ModelSerializer):
+    class Meta: 
+        model = IdeaOrder
+        fields = "__all__"
+
+
+@api_view(["GET"])
+def get_order(request):
+    order = IdeaOrder.objects.get(id=1)
+    order_serialized = IdeaOrderSerializer(order).data
+    return Response({"data": order_serialized})
+
+
+
+
 
