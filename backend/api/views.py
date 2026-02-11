@@ -222,20 +222,41 @@ def create_category(request):
 
 
 
-@api_view(["POST"])
-def delete_category(request):
-    data = request.data.get("")
-    return Response({"test": "test"})
+# id: category_id,
+# position: new_position
 
 @api_view(["POST"])
 def set_position_category(request):
-    data = request.data.get("")
+    category_id = request.data.get("id")
+    category = Category.objects.get(id=category_id)
+    new_position = request.data.get("position")
+    category.x = new_position["x"]
+    category.y = new_position["y"]
+    category.save()
+    print(f"NEW POSITIONS FOR {category.name}", new_position)
     return Response({"test": "test"})
+
+
+
+
 
 @api_view(["POST"])
 def set_area_category(request):
     data = request.data.get("")
     return Response({"test": "test"})
+
+
+
+
+
+
+
+@api_view(["POST"])
+def delete_category(request):
+    data = request.data.get("")
+    return Response({"test": "test"})
+
+
 
 
 
