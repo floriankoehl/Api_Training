@@ -63,7 +63,7 @@ export default function IdeaBinV2() {
   const [unassignedOrder, setUnassignedOrder] = useState([]);
   const [categoryOrders, setCategoryOrders] = useState({});
   const [ideaName, setIdeaName] = useState("");
-  const [ideaDescription, setIdeaDescription] = useState("");
+  const [sidebarWidth, setSidebarWidth] = useState(300);
 
   // Drag state
   const [dragging, setDragging] = useState(null);
@@ -289,6 +289,49 @@ export default function IdeaBinV2() {
     fetch_categories();
   };
 
+  // ===== SIDEBAR RESIZE =====
+
+  const handleSidebarResize = (event) => {
+    event.preventDefault();
+    const startX = event.clientX;
+    const startWidth = sidebarWidth;
+
+    const onMouseMove = (e) => {
+      const delta = e.clientX - startX;
+      const newWidth = Math.max(200, Math.min(startWidth + delta, window.innerWidth * 0.5));
+      setSidebarWidth(newWidth);
+    };
+
+    const onMouseUp = () => {
+      document.removeEventListener("mousemove", onMouseMove);
+      document.removeEventListener("mouseup", onMouseUp);
+      requestAnimationFrame(() => {
+        if (categoryContainerRef.current) {
+          const containerRect = categoryContainerRef.current.getBoundingClientRect();
+          setCategories((prev) => {
+            const updated = { ...prev };
+            let changed = false;
+            for (const [key, cat] of Object.entries(updated)) {
+              const maxX = Math.max(0, containerRect.width - cat.width);
+              const maxY = Math.max(0, containerRect.height - cat.height);
+              const clampedX = Math.max(0, Math.min(cat.x, maxX));
+              const clampedY = Math.max(0, Math.min(cat.y, maxY));
+              if (clampedX !== cat.x || clampedY !== cat.y) {
+                updated[key] = { ...cat, x: clampedX, y: clampedY };
+                set_position_category(key, { x: clampedX, y: clampedY });
+                changed = true;
+              }
+            }
+            return changed ? updated : prev;
+          });
+        }
+      });
+    };
+
+    document.addEventListener("mousemove", onMouseMove);
+    document.addEventListener("mouseup", onMouseUp);
+  };
+
   // ===== IDEA API =====
 
   const fetch_all_ideas = async () => {
@@ -314,11 +357,13 @@ export default function IdeaBinV2() {
   };
 
   const create_idea = async () => {
+    if (!ideaName.trim()) return;
     await fetch(`${API}/create_idea/`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ idea_name: ideaName, description: ideaDescription }),
+      body: JSON.stringify({ idea_name: ideaName, description: "" }),
     });
+    setIdeaName("");
     fetch_all_ideas();
   };
 
@@ -550,17 +595,17 @@ export default function IdeaBinV2() {
                 : "translateY(0px)",
             transition: "transform 200ms ease, background-color 200ms ease",
           }}
-          className="h-8 w-full rounded text-white px-2 flex justify-between items-center text-sm mb-1 cursor-grab"
+          className="w-full rounded text-white px-2 py-1.5 flex justify-between items-start text-xs mb-1 cursor-grab leading-snug"
         >
-          <div className="truncate">{idea.title}</div>
-          <div>
+          <div className="flex-1 mr-1 break-words">{idea.title}</div>
+          <div className="flex-shrink-0 mt-0.5">
             <DeleteForeverIcon
               onClick={(e) => {
                 e.stopPropagation();
                 delete_idea(idea.id);
               }}
               className="hover:text-red-500!"
-              style={{ fontSize: 16 }}
+              style={{ fontSize: 14 }}
             />
           </div>
         </div>
@@ -587,35 +632,30 @@ export default function IdeaBinV2() {
 
         <div className="h-full w-full bg-white shadow-2xl border border-gray-300 rounded flex">
           {/* ===== LEFT SIDEBAR ===== */}
-          <div className="w-1/4 h-full shadow-xl bg-gray-200 border border-gray-200 select-none flex flex-col">
+          <div
+            style={{ width: `${sidebarWidth}px`, minWidth: 200 }}
+            className="h-full shadow-xl bg-gray-200 border border-gray-200 select-none flex flex-col flex-shrink-0"
+          >
             {/* Create Idea Form */}
-            <div className="bg-gray-100 p-2 flex-shrink-0">
-              <h1 className="text-2xl mb-2">Create ideas</h1>
-              <div className="flex flex-col gap-1 md:gap-3">
-                <TextField
-                  value={ideaName}
-                  onChange={(e) => setIdeaName(e.target.value)}
-                  id="idea-name"
-                  label="Idea name"
-                  variant="outlined"
-                  size="small"
-                />
-                <TextField
-                  value={ideaDescription}
-                  onChange={(e) => setIdeaDescription(e.target.value)}
-                  multiline
-                  rows={3}
-                  id="idea-description"
-                  label="Description"
-                  variant="outlined"
-                  size="small"
-                  fullWidth
-                />
-                <Button
-                  handleButtonClick={() => create_idea()}
-                  text={"Create"}
-                />
-              </div>
+            <div className="bg-gray-100 p-3 flex-shrink-0">
+              <h1 className="text-xl mb-2">New Idea</h1>
+              <TextField
+                value={ideaName}
+                onChange={(e) => setIdeaName(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && !e.shiftKey) {
+                    e.preventDefault();
+                    create_idea();
+                  }
+                }}
+                id="idea-name"
+                label="What's your idea?"
+                variant="outlined"
+                multiline
+                rows={2}
+                fullWidth
+                sx={{ backgroundColor: "white", borderRadius: 1 }}
+              />
             </div>
 
             {/* Unassigned Idea List */}
@@ -635,10 +675,16 @@ export default function IdeaBinV2() {
             </div>
           </div>
 
+          {/* ===== RESIZE HANDLE ===== */}
+          <div
+            onMouseDown={handleSidebarResize}
+            className="w-1.5 h-full bg-gray-300 hover:bg-blue-400 cursor-col-resize flex-shrink-0 transition-colors duration-150"
+          />
+
           {/* ===== CATEGORY CONTAINER ===== */}
           <div
             ref={categoryContainerRef}
-            className="w-3/4 h-full shadow-xl border border-gray-200 relative overflow-hidden"
+            className="flex-1 h-full shadow-xl border border-gray-200 relative overflow-hidden"
           >
             {/* Category Displays */}
             {Object.entries(categories).map(
@@ -667,8 +713,8 @@ export default function IdeaBinV2() {
                     key={category_key}
                     className="absolute shadow-xl rounded p-2 flex flex-col"
                   >
-                    {/* Category header */}
-                    <div className="flex justify-between items-center mb-1 flex-shrink-0">
+                    {/* Category header (drag handle) */}
+                    <div className="flex justify-between items-center mb-1 flex-shrink-0 bg-amber-300/50 rounded-t px-1 py-0.5 cursor-grab active:cursor-grabbing border-b border-amber-400/40">
                       <span className="font-semibold text-sm truncate">
                         {category_data.name}
                       </span>
@@ -736,7 +782,7 @@ export default function IdeaBinV2() {
             transform: "translate(-50%, -100%)",
             pointerEvents: "none",
           }}
-          className="fixed h-8 shadow border border-white/20 shadow-gray-700 bg-black rounded text-white px-2 flex items-center text-sm z-50"
+          className="fixed max-w-60 shadow border border-white/20 shadow-gray-700 bg-black rounded text-white px-2 py-1 flex items-center text-xs z-50 truncate"
         >
           {dragging.idea.title}
         </div>
