@@ -611,25 +611,17 @@ export default function IdeaBinV2() {
 
       if (sameSource) {
         if (source.type === "unassigned") {
-          let updated_order = unassignedOrder;
-          setUnassignedOrder((prevOrder) => {
-            const newOrder = [...prevOrder];
-            const [movedId] = newOrder.splice(from_index, 1);
-            newOrder.splice(to_index, 0, movedId);
-            updated_order = newOrder;
-            return newOrder;
-          });
-          safe_order(updated_order, null);
+          const newOrder = [...unassignedOrder];
+          const [movedId] = newOrder.splice(from_index, 1);
+          newOrder.splice(to_index, 0, movedId);
+          setUnassignedOrder(newOrder);
+          safe_order(newOrder, null);
         } else if (source.type === "category") {
-          let updated_order = categoryOrders[source.id] || [];
-          setCategoryOrders((prev) => {
-            const newOrder = [...(prev[source.id] || [])];
-            const [movedId] = newOrder.splice(from_index, 1);
-            newOrder.splice(to_index, 0, movedId);
-            updated_order = newOrder;
-            return { ...prev, [source.id]: newOrder };
-          });
-          safe_order(updated_order, source.id);
+          const newOrder = [...(categoryOrders[source.id] || [])];
+          const [movedId] = newOrder.splice(from_index, 1);
+          newOrder.splice(to_index, 0, movedId);
+          setCategoryOrders((prev) => ({ ...prev, [source.id]: newOrder }));
+          safe_order(newOrder, source.id);
         }
       } else if (drop_target) {
         const target_category_id =
