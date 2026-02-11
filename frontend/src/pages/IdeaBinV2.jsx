@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import TextField from "@mui/material/TextField";
-import { positions } from "@mui/system";
+import DeleteForeverIcon from "@mui/icons-material/DeleteForever";
 
 const API = "http://127.0.0.1:8000/api";
 
@@ -81,6 +81,16 @@ export default function IdeaBinV2() {
   const [resizeCategory, setResizeCategory] = useState(null);
   const [resizeProportions, setResizeProportions] = useState({ 0: 0 });
 
+  // Idea state
+  const [ideas, setIdeas] = useState({});
+  const [ideaIdOrder, setIdeaIdOrder] = useState([]);
+  const [ideaName, setIdeaName] = useState("");
+  const [ideaDescription, setIdeaDescription] = useState("");
+  const [dragging, setDragging] = useState(null);
+  const [prevIndex, setPrevIndex] = useState(null);
+  const [hoverIndex, setHoverIndex] = useState(null);
+  const IdeaListRef = useRef(null);
+
 //   const handleResizeProportions = (event, category_key) => {
 //     const category = categories[category_key];
 
@@ -154,6 +164,7 @@ const handleResizeProportions = (event, category_key) => {
 
 
   const cursor_hovers_corner = (e) => {
+    if (!categoryContainerRef.current) return;
     const container_rect = categoryContainerRef.current.getBoundingClientRect();
 
     const categoryList = Object.values(categories);
@@ -209,6 +220,7 @@ const handleResizeProportions = (event, category_key) => {
   }, [resizeCategory]);
 
   const fetch_categories = async () => {
+    try {
     const res = await fetch(`${API}/get_all_categories/`);
     const categories = await res.json();
     console.log("categories received: ", categories.categories);
@@ -231,6 +243,9 @@ const handleResizeProportions = (event, category_key) => {
 
     // console.log("serialized categories objects: ", serialized_categories)
     setCategories(serialized_categories);
+    } catch (err) {
+      console.error("Failed to fetch categories:", err);
+    }
   };
   useEffect(() => {
     fetch_categories();
@@ -295,6 +310,122 @@ const handleResizeProportions = (event, category_key) => {
     fetch_categories();
   };
 
+  // ===== IDEA FUNCTIONS =====
+
+  const fetch_all_ideas = async () => {
+    try {
+    const res = await fetch(`${API}/get_all_ideas/`);
+    const data = await res.json();
+    const idea_list = data?.data || [];
+    const order = data?.order || [];
+
+    const idea_object = {};
+    for (let i = 0; i < idea_list.length; i++) {
+      const idea = idea_list[i];
+      idea_object[idea.id] = { ...idea };
+    }
+
+    setIdeaIdOrder(order);
+    setIdeas(idea_object);
+    } catch (err) {
+      console.error("Failed to fetch ideas:", err);
+    }
+  };
+
+  const create_idea = async () => {
+    const res = await fetch(`${API}/create_idea/`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        idea_name: ideaName,
+        description: ideaDescription,
+      }),
+    });
+    const answer = await res.json();
+    fetch_all_ideas();
+  };
+
+  const delete_idea = async (idea_id) => {
+    const res = await fetch(`${API}/delete_idea/`, {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: idea_id }),
+    });
+    const answer = await res.json();
+    fetch_all_ideas();
+  };
+
+  const safe_order = async (new_order) => {
+    const res = await fetch(`${API}/safe_order/`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ order: new_order }),
+    });
+    const answer = await res.json();
+  };
+
+  const handleDrag = (event, idea, index) => {
+    const from_index = index;
+    let to_index = index;
+
+    let ghost = {
+      idea,
+      x: event.clientX,
+      y: event.clientY,
+    };
+
+    setDragging(ghost);
+    setPrevIndex(index);
+
+    const container = IdeaListRef.current;
+    const idea_dom_elements = [...container.children];
+
+    const onMouseMove = (e) => {
+      ghost = { ...ghost, x: e.clientX, y: e.clientY };
+      setDragging(ghost);
+
+      for (let i = 0; i < idea_dom_elements.length - 1; i++) {
+        const element = idea_dom_elements[i];
+        const next_element = idea_dom_elements[i + 1];
+        const rect = element.getBoundingClientRect();
+        const next_rect = next_element.getBoundingClientRect();
+
+        if (ghost.y > rect.y && ghost.y < next_rect.y) {
+          setHoverIndex(i);
+          to_index = i;
+        }
+      }
+    };
+
+    const onMouseUp = () => {
+      let updated_order = ideaIdOrder;
+
+      setIdeaIdOrder((prevOrder) => {
+        const newOrder = [...prevOrder];
+        const [movedId] = newOrder.splice(from_index, 1);
+        newOrder.splice(to_index, 0, movedId);
+        updated_order = newOrder;
+        return newOrder;
+      });
+
+      safe_order(updated_order);
+
+      setDragging(null);
+      setPrevIndex(null);
+      setHoverIndex(null);
+
+      document.removeEventListener("mousemove", onMouseMove);
+      document.removeEventListener("mouseup", onMouseUp);
+    };
+
+    document.addEventListener("mousemove", onMouseMove);
+    document.addEventListener("mouseup", onMouseUp);
+  };
+
+  useEffect(() => {
+    fetch_all_ideas();
+  }, []);
+
 
 
 
@@ -321,7 +452,99 @@ const handleResizeProportions = (event, category_key) => {
         ></div>
 
         <div className="h-full w-full bg-white shadow-2xl border border-gray-300 rounded flex">
-          <div className="w-1/4 h-full shadow-xl bg-gray-200 border border-gray-200"></div>
+          <div className="w-1/4 h-full shadow-xl bg-gray-200 border border-gray-200 select-none">
+            {/* Create Idea Form */}
+            <div className="h-4/10 bg-gray-100 p-2">
+              <h1 className="text-2xl mb-2">Create ideas</h1>
+              <div className="flex flex-col gap-1 md:gap-5">
+                <TextField
+                  value={ideaName}
+                  onChange={(e) => setIdeaName(e.target.value)}
+                  id="idea-name"
+                  label="Idea name"
+                  variant="outlined"
+                />
+                <TextField
+                  value={ideaDescription}
+                  onChange={(e) => setIdeaDescription(e.target.value)}
+                  multiline
+                  rows={4}
+                  id="idea-description"
+                  label="Description"
+                  variant="outlined"
+                  fullWidth
+                />
+                <Button
+                  handleButtonClick={() => create_idea()}
+                  text={"Create"}
+                />
+              </div>
+            </div>
+
+            {/* Idea List */}
+            <div ref={IdeaListRef} className="h-6/10 p-2 relative overflow-y-auto">
+              <h1 className="text-2xl">The ideas</h1>
+              {ideaIdOrder.map((ideaId, arrayIndex) => {
+                const idea = ideas[ideaId];
+                if (!idea) return null;
+                return (
+                  <div key={`${idea.title}_${ideaId}`}>
+                    <div
+                      style={{
+                        opacity: arrayIndex === hoverIndex ? 1 : 0,
+                        transform:
+                          arrayIndex === hoverIndex
+                            ? "translateY(5px)"
+                            : "translateY(0px)",
+                        transition: "opacity 100ms ease",
+                      }}
+                      className="w-full h-2 my-[1px] rounded bg-gray-700"
+                    ></div>
+
+                    <div
+                      onMouseDown={(e) => handleDrag(e, idea, arrayIndex)}
+                      style={{
+                        backgroundColor:
+                          arrayIndex === prevIndex ? "gray" : "black",
+                        transform:
+                          hoverIndex !== null &&
+                          arrayIndex >= hoverIndex &&
+                          arrayIndex !== prevIndex
+                            ? "translateY(10px)"
+                            : "translateY(0px)",
+                        transition:
+                          "transform 200ms ease, background-color 200ms ease",
+                      }}
+                      className="h-10 w-full rounded text-white px-2 flex justify-between items-center"
+                    >
+                      <div>{idea.title}</div>
+                      <div>
+                        <DeleteForeverIcon
+                          onClick={() => delete_idea(idea.id)}
+                          className="hover:text-red-500!"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+
+              {/* GHOST & DRAGGING */}
+              {dragging && (
+                <div
+                  style={{
+                    top: `${dragging.y}px`,
+                    left: `${dragging.x}px`,
+                    transform: "translate(-100%, -100%)",
+                    animation: "pickUp 150ms ease forwards",
+                  }}
+                  className="fixed h-10 shadow border border-white/20 shadow-gray-700 bg-black rounded mt-2 text-white px-2 flex justify-between items-center"
+                >
+                  <div>{dragging.idea.title}</div>
+                </div>
+              )}
+            </div>
+          </div>
 
           {/* Category Container */}
           <div

@@ -21,4 +21,8 @@ urlpatterns = [
     path("set_position_category/", set_position_category),
     path("set_area_category/", set_area_category),
 
+    path("get_all_ideas/", get_all_ideas),
+    path("create_idea/", create_idea),
+    path("delete_idea/", delete_idea),
+    path("safe_order/", safe_order),
 ]

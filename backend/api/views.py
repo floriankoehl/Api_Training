@@ -4,6 +4,11 @@
 
 # from .models import Task, Idea, IdeaOrder
 
+from .models import *
+from rest_framework.decorators import api_view
+from rest_framework.response import Response
+from rest_framework import serializers
+
 
 # class TaskSerializer(serializers.ModelSerializer):
 #     class Meta:
@@ -86,102 +91,46 @@
 
 
 
-# class IdeaSerializer(serializers.ModelSerializer):
-#     class Meta: 
-#         model = Idea
-#         fields = "__all__"
+class IdeaSerializer(serializers.ModelSerializer):
+    class Meta: 
+        model = Idea
+        fields = "__all__"
 
 
+@api_view(["GET"])
+def get_all_ideas(request):
+    all_ideas = Idea.objects.all()
+    all_ideas_serialized = IdeaSerializer(all_ideas, many=True).data
+    order = list(Idea.objects.order_by('order_index').values_list('id', flat=True))
+    return Response({"data": all_ideas_serialized, "order": order})
 
 
-
-# @api_view(["POST"])
-# def create_idea(request):
-#     name_of_idea = request.data.get("idea_name")
-#     print("correctly inside here", name_of_idea)
-#     idea, created = Idea.objects.get_or_create(name=name_of_idea)
-#     idea_serialized = IdeaSerializer(idea).data
-#     idea_order = IdeaOrder.objects.get(id=1)
-#     order = idea_order.order
-#     order.append(idea.id)
-#     idea_order.order = order   # reassign!
-#     idea_order.save()
-
-#     return Response({"created": False, "idea": idea_serialized})
+@api_view(["POST"])
+def create_idea(request):
+    title = request.data.get("idea_name", "").strip()
+    description = request.data.get("description", "")
+    if not title:
+        return Response({"error": "Title is required"}, status=400)
+    from django.db.models import Max
+    max_order = Idea.objects.aggregate(Max('order_index'))['order_index__max']
+    next_order = (max_order + 1) if max_order is not None else 0
+    idea = Idea.objects.create(title=title, description=description, order_index=next_order)
+    return Response({"created": True, "idea": IdeaSerializer(idea).data})
 
 
-
-# @api_view(["GET"])
-# def get_all_ideas(request):
-#     all_ideas = Idea.objects.all()
-#     all_ideas_serialized = IdeaSerializer(all_ideas, many = True).data
-#     return Response({"data": all_ideas_serialized})
-
-
-# @api_view(["DELETE"])
-# def delete_idea(request):
-#     idea_to_delete = request.data.get("name")
-#     idea = Idea.objects.get(name = idea_to_delete)
-#     idea.delete()
-
-#     IdeaOrder.objects.get(id=1).recompute()
-#     return Response({"deleted": True})
+@api_view(["DELETE"])
+def delete_idea(request):
+    idea_id = request.data.get("id")
+    Idea.objects.filter(id=idea_id).delete()
+    return Response({"deleted": True})
 
 
-
-# class IdeaOrderSerializer(serializers.ModelSerializer):
-#     class Meta: 
-#         model = IdeaOrder
-#         fields = "__all__"
-
-
-# @api_view(["GET"])
-# def get_order(request):
-#     order = IdeaOrder.objects.get(id=1)
-#     order_serialized = IdeaOrderSerializer(order).data
-#     return Response({"data": order_serialized})
-
-
-
-# @api_view(["POST"])
-# def safe_order(request):
-#     new_order_list = request.data.get("order")
-#     print("NEW ORDER SHOULD BE", new_order_list)
-#     current_order_item = IdeaOrder.objects.get(id=1)
-#     current_order_item.order = new_order_list
-#     current_order_item.save()
-#     print("updated: ", current_order_item.order)
-    
-#     return Response({"sucesfull": True})
-
-
-
-# @api_view(["POST"])
-# def set_category(request):
-#     print("Sucesfuly inside set category", request.data)
-#     category = request.data.get("category")
-#     idea_id = request.data.get("idea_id")
-#     print("The idea: ", idea_id)
-#     print("The category: ", category)
-#     idea = Idea.objects.get(id=idea_id)
-#     idea.category = category
-#     idea.save()
-
-#     return Response({"1":"1"})
-
-
-
-
-
-
-
-
-
-
-from .models import *
-from rest_framework.decorators import api_view
-from rest_framework.response import Response
-from rest_framework import serializers
+@api_view(["POST"])
+def safe_order(request):
+    new_order = request.data.get("order", [])
+    for index, idea_id in enumerate(new_order):
+        Idea.objects.filter(id=idea_id).update(order_index=index)
+    return Response({"successful": True})
 
 
 
