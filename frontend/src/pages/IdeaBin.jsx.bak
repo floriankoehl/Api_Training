@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import TextField from "@mui/material/TextField";
 import DeleteForeverIcon from "@mui/icons-material/DeleteForever";
+import FlipToFrontIcon from "@mui/icons-material/FlipToFront";
 
 const API = "http://127.0.0.1:8000/api";
 
@@ -16,8 +17,6 @@ function Button({ text, handleButtonClick }) {
             shadow-xl border border-gray-200 rounded-full h-10 w-40
             flex justify-center items-center
             hover:bg-gray-100 active:bg-gray-300
-
-
             "
       >
         {text}
@@ -44,8 +43,8 @@ function CreateCategoryForm({ onButtonClick }) {
   };
 
   const button_click = async () => {
-    await create_category(); // wait until POST finishes
-    onButtonClick(); // now refetch
+    await create_category();
+    onButtonClick();
   };
 
   return (
@@ -79,7 +78,6 @@ export default function IdeaBinV2() {
   const [displayForm, setDisplayForm] = useState(false);
   const categoryContainerRef = useRef(null);
   const [resizeCategory, setResizeCategory] = useState(null);
-  const [resizeProportions, setResizeProportions] = useState({ 0: 0 });
 
   // Idea state
   const [ideas, setIdeas] = useState({});
@@ -91,77 +89,56 @@ export default function IdeaBinV2() {
   const [hoverIndex, setHoverIndex] = useState(null);
   const IdeaListRef = useRef(null);
 
-//   const handleResizeProportions = (event, category_key) => {
-//     const category = categories[category_key];
+  // ===== CATEGORY RESIZE =====
 
-//     const startMouseX = event.clientX;
-//     const startMouseY = event.clientY;
+  const handleResizeProportions = (event, category_key) => {
+    const category = categories[category_key];
+    const containerRect = categoryContainerRef.current.getBoundingClientRect();
 
-//     const startWidth = category.width;
-//     const startHeight = category.height;
+    const startMouseX = event.clientX - containerRect.left;
+    const startMouseY = event.clientY - containerRect.top;
 
-//     const onMouseMove = (e) => {
-//       const deltaX = e.clientX - startMouseX;
-//       const deltaY = e.clientY - startMouseY;
+    const startWidth = category.width;
+    const startHeight = category.height;
 
-//       const new_width = startWidth + deltaX;
-//       const new_height = startHeight + deltaY;
+    let finalWidth = startWidth;
+    let finalHeight = startHeight;
 
-//       setCategories((prev) => ({
-//         ...prev,
-//         [category_key]: {
-//           ...prev[category_key],
-//           width: Math.max(50, new_width),
-//           height: Math.max(50, new_height),
-//         },
-//       }));
-//     };
+    const onMouseMove = (e) => {
+      const currentMouseX = e.clientX - containerRect.left;
+      const currentMouseY = e.clientY - containerRect.top;
 
-//     const onMouseUp = () => {
-//       document.removeEventListener("mousemove", onMouseMove);
-//       document.removeEventListener("mouseup", onMouseUp);
-//     };
+      const deltaX = currentMouseX - startMouseX;
+      const deltaY = currentMouseY - startMouseY;
 
-//     document.addEventListener("mousemove", onMouseMove);
-//     document.addEventListener("mouseup", onMouseUp);
-//   };
+      // Clamp so category doesn't extend beyond container
+      const maxWidth = containerRect.width - category.x;
+      const maxHeight = containerRect.height - category.y;
 
-const handleResizeProportions = (event, category_key) => {
-  const category = categories[category_key];
-  const containerRect = categoryContainerRef.current.getBoundingClientRect();
+      finalWidth = Math.max(50, Math.min(startWidth + deltaX, maxWidth));
+      finalHeight = Math.max(50, Math.min(startHeight + deltaY, maxHeight));
 
-  const startMouseX = event.clientX - containerRect.left;
-  const startMouseY = event.clientY - containerRect.top;
+      setCategories((prev) => ({
+        ...prev,
+        [category_key]: {
+          ...prev[category_key],
+          width: finalWidth,
+          height: finalHeight,
+        },
+      }));
+    };
 
-  const startWidth = category.width;
-  const startHeight = category.height;
+    const onMouseUp = () => {
+      // Save width and height to backend
+      set_area_category(category_key, finalWidth, finalHeight);
 
-  const onMouseMove = (e) => {
-    const currentMouseX = e.clientX - containerRect.left;
-    const currentMouseY = e.clientY - containerRect.top;
+      document.removeEventListener("mousemove", onMouseMove);
+      document.removeEventListener("mouseup", onMouseUp);
+    };
 
-    const deltaX = currentMouseX - startMouseX;
-    const deltaY = currentMouseY - startMouseY;
-
-    setCategories(prev => ({
-      ...prev,
-      [category_key]: {
-        ...prev[category_key],
-        width: Math.max(50, startWidth + deltaX),
-        height: Math.max(50, startHeight + deltaY)
-      }
-    }));
+    document.addEventListener("mousemove", onMouseMove);
+    document.addEventListener("mouseup", onMouseUp);
   };
-
-  const onMouseUp = () => {
-    document.removeEventListener("mousemove", onMouseMove);
-    document.removeEventListener("mouseup", onMouseUp);
-  };
-
-  document.addEventListener("mousemove", onMouseMove);
-  document.addEventListener("mouseup", onMouseUp);
-};
-
 
   const cursor_hovers_corner = (e) => {
     if (!categoryContainerRef.current) return;
@@ -187,7 +164,6 @@ const handleResizeProportions = (event, category_key) => {
       ) {
         hovering = true;
         setResizeCategory(category.id);
-        console.log(e);
         break;
       }
     }
@@ -200,7 +176,6 @@ const handleResizeProportions = (event, category_key) => {
 
   useEffect(() => {
     document.addEventListener("mousemove", cursor_hovers_corner);
-
     return () => {
       document.removeEventListener("mousemove", cursor_hovers_corner);
     };
@@ -219,34 +194,34 @@ const handleResizeProportions = (event, category_key) => {
     };
   }, [resizeCategory]);
 
+  // ===== CATEGORY API =====
+
   const fetch_categories = async () => {
     try {
-    const res = await fetch(`${API}/get_all_categories/`);
-    const categories = await res.json();
-    console.log("categories received: ", categories.categories);
-    const all_categories = categories.categories;
+      const res = await fetch(`${API}/get_all_categories/`);
+      const categories = await res.json();
+      const all_categories = categories.categories;
 
-    const serialized_categories = {};
-    for (let i = 0; i < all_categories.length; i++) {
-      const category = all_categories[i];
-      // console.log("Index: ", i)
-      // console.log("category: ", category)
-      serialized_categories[category.id] = {
-        id: category.id,
-        name: category.name,
-        x: category.x,
-        y: category.y,
-        width: category.width,
-        height: category.height,
-      };
-    }
+      const serialized_categories = {};
+      for (let i = 0; i < all_categories.length; i++) {
+        const category = all_categories[i];
+        serialized_categories[category.id] = {
+          id: category.id,
+          name: category.name,
+          x: category.x,
+          y: category.y,
+          width: category.width,
+          height: category.height,
+          z_index: category.z_index || 0,
+        };
+      }
 
-    // console.log("serialized categories objects: ", serialized_categories)
-    setCategories(serialized_categories);
+      setCategories(serialized_categories);
     } catch (err) {
       console.error("Failed to fetch categories:", err);
     }
   };
+
   useEffect(() => {
     fetch_categories();
   }, []);
@@ -254,49 +229,97 @@ const handleResizeProportions = (event, category_key) => {
   const set_position_category = async (category_id, new_position) => {
     const res = await fetch(`${API}/set_position_category/`, {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         id: category_id,
         position: new_position,
       }),
     });
     const answer = await res.json();
-    console.log("answer: ", answer);
   };
+
+  const set_area_category = async (category_id, width, height) => {
+    const res = await fetch(`${API}/set_area_category/`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        id: category_id,
+        width: width,
+        height: height,
+      }),
+    });
+    const answer = await res.json();
+  };
+
+  const delete_category = async (category_id) => {
+    const res = await fetch(`${API}/delete_category/`, {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: category_id }),
+    });
+    const answer = await res.json();
+    // Remove from local state
+    setCategories((prev) => {
+      const updated = { ...prev };
+      delete updated[category_id];
+      return updated;
+    });
+  };
+
+  const bring_to_front_category = async (category_id) => {
+    const res = await fetch(`${API}/bring_to_front_category/`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: category_id }),
+    });
+    const answer = await res.json();
+    // Update local z_index: give this one the max + 1
+    setCategories((prev) => {
+      const maxZ = Math.max(0, ...Object.values(prev).map((c) => c.z_index || 0));
+      return {
+        ...prev,
+        [category_id]: {
+          ...prev[category_id],
+          z_index: maxZ + 1,
+        },
+      };
+    });
+  };
+
+  // ===== CATEGORY DRAG (clamped to container) =====
 
   const handleCategoryDrag = (event, category_key) => {
     const category = categories[category_key];
-    console.log("category: ", category.x);
+    const containerRect = categoryContainerRef.current.getBoundingClientRect();
 
     const startX = event.clientX - category.x;
     const startY = event.clientY - category.y;
-    let new_x = startX;
-    let new_y = startY;
+    let new_x = category.x;
+    let new_y = category.y;
 
     const onMouseMove = (e) => {
-      new_x = e.clientX - startX;
-      new_y = e.clientY - startY;
+      const raw_x = e.clientX - startX;
+      const raw_y = e.clientY - startY;
 
-      setCategories((prev) => {
-        return {
-          ...prev,
-          [category_key]: {
-            ...prev[category_key],
-            x: new_x,
-            y: new_y,
-          },
-        };
-      });
+      // Clamp so category stays inside the container
+      const maxX = containerRect.width - category.width;
+      const maxY = containerRect.height - category.height;
+
+      new_x = Math.max(0, Math.min(raw_x, maxX));
+      new_y = Math.max(0, Math.min(raw_y, maxY));
+
+      setCategories((prev) => ({
+        ...prev,
+        [category_key]: {
+          ...prev[category_key],
+          x: new_x,
+          y: new_y,
+        },
+      }));
     };
-    const onMouseUp = () => {
-      const new_position = {
-        x: new_x,
-        y: new_y,
-      };
-      set_position_category(category_key, new_position);
 
+    const onMouseUp = () => {
+      set_position_category(category_key, { x: new_x, y: new_y });
       document.removeEventListener("mousemove", onMouseMove);
       document.removeEventListener("mouseup", onMouseUp);
     };
@@ -314,19 +337,19 @@ const handleResizeProportions = (event, category_key) => {
 
   const fetch_all_ideas = async () => {
     try {
-    const res = await fetch(`${API}/get_all_ideas/`);
-    const data = await res.json();
-    const idea_list = data?.data || [];
-    const order = data?.order || [];
+      const res = await fetch(`${API}/get_all_ideas/`);
+      const data = await res.json();
+      const idea_list = data?.data || [];
+      const order = data?.order || [];
 
-    const idea_object = {};
-    for (let i = 0; i < idea_list.length; i++) {
-      const idea = idea_list[i];
-      idea_object[idea.id] = { ...idea };
-    }
+      const idea_object = {};
+      for (let i = 0; i < idea_list.length; i++) {
+        const idea = idea_list[i];
+        idea_object[idea.id] = { ...idea };
+      }
 
-    setIdeaIdOrder(order);
-    setIdeas(idea_object);
+      setIdeaIdOrder(order);
+      setIdeas(idea_object);
     } catch (err) {
       console.error("Failed to fetch ideas:", err);
     }
@@ -425,11 +448,6 @@ const handleResizeProportions = (event, category_key) => {
   useEffect(() => {
     fetch_all_ideas();
   }, []);
-
-
-
-
-
 
   return (
     <>
@@ -549,30 +567,52 @@ const handleResizeProportions = (event, category_key) => {
           {/* Category Container */}
           <div
             ref={categoryContainerRef}
-            className="w-3/4 h-full shadow-xl border border-gray-200 relative"
+            className="w-3/4 h-full shadow-xl border border-gray-200 relative overflow-hidden"
           >
-            {/* Catgory Displays */}
+            {/* Category Displays */}
             {Object.entries(categories).map(([category_key, category_data]) => {
-              // console.log("key", category_key)
-              // console.log("value", category_data)
               return (
                 <div
                   onMouseDown={(e) => {
                     if (!e.ctrlKey) {
-                        handleCategoryDrag(e, category_key);
+                      handleCategoryDrag(e, category_key);
                     }
-                    
                   }}
                   style={{
                     left: category_data.x,
                     top: category_data.y,
                     width: category_data.width,
                     height: category_data.height,
+                    zIndex: category_data.z_index || 0,
                   }}
                   key={category_key}
-                  className="absolute bg-yellow-200 shadow-xl rounded"
+                  className="absolute bg-yellow-200 shadow-xl rounded p-2"
                 >
-                  {category_data.name}
+                  {/* Category header with name + actions */}
+                  <div className="flex justify-between items-center">
+                    <span className="font-semibold text-sm truncate">
+                      {category_data.name}
+                    </span>
+                    <div className="flex items-center gap-1">
+                      <FlipToFrontIcon
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          bring_to_front_category(category_key);
+                        }}
+                        className="hover:text-blue-600! cursor-pointer"
+                        style={{ fontSize: 18 }}
+                        titleAccess="Bring to front"
+                      />
+                      <DeleteForeverIcon
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          delete_category(category_key);
+                        }}
+                        className="hover:text-red-500! cursor-pointer"
+                        style={{ fontSize: 18 }}
+                      />
+                    </div>
+                  </div>
                 </div>
               );
             })}
@@ -582,7 +622,7 @@ const handleResizeProportions = (event, category_key) => {
               onClick={() => {
                 setDisplayForm(true);
               }}
-              className="absolute top-5 right-5 "
+              className="absolute top-5 right-5"
             >
               <Button
                 text={"Create Category"}

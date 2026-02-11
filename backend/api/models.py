@@ -69,6 +69,7 @@ class Category(models.Model):
     y = models.IntegerField(default=0)
     width = models.IntegerField(default=100)
     height = models.IntegerField(default=100)
+    z_index = models.IntegerField(default=0)
 
 
 

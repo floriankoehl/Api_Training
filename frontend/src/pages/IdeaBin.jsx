@@ -1,428 +1,746 @@
 import { useEffect, useRef, useState } from "react";
 import TextField from "@mui/material/TextField";
-import Button from "@mui/material/Button";
 import DeleteForeverIcon from "@mui/icons-material/DeleteForever";
-import { chipClasses } from "@mui/material/Chip";
-import { order } from "@mui/system";
+import FlipToFrontIcon from "@mui/icons-material/FlipToFront";
 
 const API = "http://127.0.0.1:8000/api";
 
-export default function IdeaBin() {
+function Button({ text, handleButtonClick }) {
+  return (
+    <div
+      onClick={() => handleButtonClick()}
+      className="bg-white select-none shadow-xl border border-gray-200 rounded-full h-10 w-40
+        flex justify-center items-center hover:bg-gray-100 active:bg-gray-300"
+    >
+      {text}
+    </div>
+  );
+}
+
+function CreateCategoryForm({ onButtonClick }) {
+  const [categoryName, setCategoryName] = useState("");
+
+  const create_category = async () => {
+    const res = await fetch(`${API}/create_category/`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: categoryName }),
+    });
+    await res.json();
+  };
+
+  const button_click = async () => {
+    await create_category();
+    onButtonClick();
+  };
+
+  return (
+    <div className="w-100 border border-gray-300 p-5 rounded shadow-xl bg-white justify-center items-center">
+      <div className="flex flex-col mb-4">
+        {categoryName}
+        <TextField
+          onChange={(e) => setCategoryName(e.target.value)}
+          id="outlined-basic"
+          label="Name"
+          variant="outlined"
+        />
+      </div>
+      <div className="w-full flex justify-center items-center">
+        <Button handleButtonClick={button_click} text={"Create"} />
+      </div>
+    </div>
+  );
+}
+
+export default function IdeaBinV2() {
+  const [categories, setCategories] = useState({});
+  const [displayForm, setDisplayForm] = useState(false);
+  const categoryContainerRef = useRef(null);
+  const [resizeCategory, setResizeCategory] = useState(null);
+
+  // Idea state
   const [ideas, setIdeas] = useState({});
-  const [ideaIdOrder, setIdIdeaOrder] = useState([])
-  const [ideaBeingCreated, setIdeaBeingCreated] = useState("");
-  const [dragging, setDragging] = useState(false)
-  const [prevIndex, setPrevIndex] = useState(null)
-  const [hoverIndex, setHoverIndex] = useState(null)
-  const IdeaListRef = useRef(null)
-  const blueRef = useRef(null)
-  const [isOverBlue, setIsOverBlue] = useState(false)
+  const [unassignedOrder, setUnassignedOrder] = useState([]);
+  const [categoryOrders, setCategoryOrders] = useState({});
+  const [ideaName, setIdeaName] = useState("");
+  const [ideaDescription, setIdeaDescription] = useState("");
 
+  // Drag state
+  const [dragging, setDragging] = useState(null);
+  const [dragSource, setDragSource] = useState(null);
+  const [prevIndex, setPrevIndex] = useState(null);
+  const [hoverIndex, setHoverIndex] = useState(null);
+  const [hoverCategory, setHoverCategory] = useState(null);
+  const [hoverUnassigned, setHoverUnassigned] = useState(false);
 
+  const IdeaListRef = useRef(null);
+  const categoryRefs = useRef({});
 
-    //  API CALLS
-  const fetch_all_ideas = async () => {
-    const order = await get_order()
-    console.log("THe order: ", order)
-    
-    const res = await fetch(`${API}/get_all_ideas/`);
-    const ideas = await res.json();
-    
-    const idea_list = ideas?.data || []  // Fallback to empty array
-   
-    // console.log("HERE_______")
-    // console.log("idea_list",  idea_list)
-    const idea_object = {}
-    for (let i = 0; i < idea_list.length; i ++) {
-        let idea = idea_list[i]
-        idea_object[idea.id] = {...idea}
+  // ===== CATEGORY RESIZE =====
+
+  const handleResizeProportions = (event, category_key) => {
+    const category = categories[category_key];
+    const containerRect = categoryContainerRef.current.getBoundingClientRect();
+
+    const startMouseX = event.clientX - containerRect.left;
+    const startMouseY = event.clientY - containerRect.top;
+
+    const startWidth = category.width;
+    const startHeight = category.height;
+
+    let finalWidth = startWidth;
+    let finalHeight = startHeight;
+
+    const onMouseMove = (e) => {
+      const currentMouseX = e.clientX - containerRect.left;
+      const currentMouseY = e.clientY - containerRect.top;
+
+      const deltaX = currentMouseX - startMouseX;
+      const deltaY = currentMouseY - startMouseY;
+
+      const maxWidth = containerRect.width - category.x;
+      const maxHeight = containerRect.height - category.y;
+
+      finalWidth = Math.max(50, Math.min(startWidth + deltaX, maxWidth));
+      finalHeight = Math.max(50, Math.min(startHeight + deltaY, maxHeight));
+
+      setCategories((prev) => ({
+        ...prev,
+        [category_key]: {
+          ...prev[category_key],
+          width: finalWidth,
+          height: finalHeight,
+        },
+      }));
+    };
+
+    const onMouseUp = () => {
+      set_area_category(category_key, finalWidth, finalHeight);
+      document.removeEventListener("mousemove", onMouseMove);
+      document.removeEventListener("mouseup", onMouseUp);
+    };
+
+    document.addEventListener("mousemove", onMouseMove);
+    document.addEventListener("mouseup", onMouseUp);
+  };
+
+  const cursor_hovers_corner = (e) => {
+    if (!categoryContainerRef.current) return;
+    const container_rect = categoryContainerRef.current.getBoundingClientRect();
+
+    const categoryList = Object.values(categories);
+    let hovering = false;
+
+    for (let i = 0; i < categoryList.length; i++) {
+      const category = categoryList[i];
+
+      const right_bottom_coordinates = {
+        x: category.x + category.width + container_rect.left,
+        y: category.y + category.height + container_rect.top,
+      };
+
+      if (
+        e.clientX < right_bottom_coordinates.x + 20 &&
+        e.clientX > right_bottom_coordinates.x - 20 &&
+        e.clientY < right_bottom_coordinates.y + 20 &&
+        e.clientY > right_bottom_coordinates.y - 20 &&
+        e.ctrlKey
+      ) {
+        hovering = true;
+        setResizeCategory(category.id);
+        break;
+      }
     }
-    // console.log("UPDATRED ID OBJECT", idea_object)
 
-    console.log("ideas created: ", idea_object)
-    setIdIdeaOrder(order)
-    setIdeas(idea_object)
-    // setIdeas(ideas.data);
-    // console.log("receive all data", ideas.data)
+    document.body.style.cursor = hovering ? "se-resize" : "default";
+    if (!hovering) {
+      setResizeCategory(null);
+    }
   };
 
   useEffect(() => {
+    document.addEventListener("mousemove", cursor_hovers_corner);
+    return () => document.removeEventListener("mousemove", cursor_hovers_corner);
+  }, [categories]);
 
-    fetch_all_ideas();
-    // console.log("Test", ideas)
+  useEffect(() => {
+    const handleMouseDown = (e) => {
+      if (resizeCategory !== null && e.ctrlKey) {
+        handleResizeProportions(e, resizeCategory);
+      }
+    };
+    document.addEventListener("mousedown", handleMouseDown);
+    return () => document.removeEventListener("mousedown", handleMouseDown);
+  }, [resizeCategory]);
 
-    
+  // ===== CATEGORY API =====
 
+  const fetch_categories = async () => {
+    try {
+      const res = await fetch(`${API}/get_all_categories/`);
+      const data = await res.json();
+      const all_categories = data.categories;
 
+      const serialized = {};
+      for (let i = 0; i < all_categories.length; i++) {
+        const c = all_categories[i];
+        serialized[c.id] = {
+          id: c.id,
+          name: c.name,
+          x: c.x,
+          y: c.y,
+          width: c.width,
+          height: c.height,
+          z_index: c.z_index || 0,
+        };
+      }
+      setCategories(serialized);
+    } catch (err) {
+      console.error("Failed to fetch categories:", err);
+    }
+  };
 
-    // get_order()
-  }, []);
-
-  const create_idea = async () => {
-    const res = await fetch(`${API}/create_idea/`, {
+  const set_position_category = async (category_id, new_position) => {
+    await fetch(`${API}/set_position_category/`, {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        idea_name: ideaBeingCreated,
-      }),
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: category_id, position: new_position }),
     });
+  };
 
-    const answer = await res.json();
+  const set_area_category = async (category_id, width, height) => {
+    await fetch(`${API}/set_area_category/`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: category_id, width, height }),
+    });
+  };
+
+  const delete_category = async (category_id) => {
+    await fetch(`${API}/delete_category/`, {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: category_id }),
+    });
+    setCategories((prev) => {
+      const updated = { ...prev };
+      delete updated[category_id];
+      return updated;
+    });
     fetch_all_ideas();
   };
 
-  const delete_idea = async (idea_name) => {
-    const res = await fetch(`${API}/delete_idea/`, {
-        method: "DELETE",
-        headers: {
-            "Content-Type": "application/json"
-        },
-        body: JSON.stringify({
-            name: idea_name
-        })
-    })
-
-    const answer = await res.json()
-
-
-    fetch_all_ideas();
-  }
-
-
-  const safe_order = async (new_order) => {
-    const res = await fetch(`${API}/safe_order/`, {
-        method: "POST",
-        headers: {
-            "Content-Type": "application/json"
-        },
-        body: JSON.stringify({
-            order: new_order
-        })
-    })
-    const answer = await res.json()
-    console.log("answer_______", answer)
-  }
-
-  const get_order = async () => {
-    const res = await fetch(`${API}/get_order/`)
-    const answer = await res.json()
-    return answer?.data?.order || []  // Return empty array as fallback
-  }
-
-  const set_category = async (idea_id_to_set, category_to_set) => {
-    const res = await fetch(`${API}/set_category/`, {
+  const bring_to_front_category = async (category_id) => {
+    await fetch(`${API}/bring_to_front_category/`, {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({
-        idea_id: idea_id_to_set,
-        category: category_to_set
-      })
-    })
-  }
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: category_id }),
+    });
+    setCategories((prev) => {
+      const maxZ = Math.max(
+        0,
+        ...Object.values(prev).map((c) => c.z_index || 0)
+      );
+      return {
+        ...prev,
+        [category_id]: { ...prev[category_id], z_index: maxZ + 1 },
+      };
+    });
+  };
 
+  // ===== CATEGORY DRAG (clamped) =====
 
+  const handleCategoryDrag = (event, category_key) => {
+    const category = categories[category_key];
+    const containerRect = categoryContainerRef.current.getBoundingClientRect();
 
-
-
-
-
-
-
-
-  const handleDrag = (event, idea, index) => {
-    const from_index = index
-    let to_index = index
-    let is_over = false
-
-
-    let ghost = {
-        idea, 
-        x: event.clientX, 
-        y: event.clientY
-    }
-
-
-    setDragging(ghost)
-    setPrevIndex(index)
-
-    const container = IdeaListRef.current
-    const container_rect = container.getBoundingClientRect()
-    const idea_dom_elements = [...container.children]
-    const blue_rect = blueRef.current.getBoundingClientRect()
-
+    const startX = event.clientX - category.x;
+    const startY = event.clientY - category.y;
+    let new_x = category.x;
+    let new_y = category.y;
 
     const onMouseMove = (e) => {
-        ghost = {
-            ...ghost, 
-            x: e.clientX, 
-            y: e.clientY
-        }
-        setDragging(ghost)
+      const raw_x = e.clientX - startX;
+      const raw_y = e.clientY - startY;
+      const maxX = containerRect.width - category.width;
+      const maxY = containerRect.height - category.height;
 
+      new_x = Math.max(0, Math.min(raw_x, maxX));
+      new_y = Math.max(0, Math.min(raw_y, maxY));
 
-        console.log("GHOST WIDTH", ghost)
-        if (ghost.x - 100 < container_rect.right) {
-               for (let i = 0; i < idea_dom_elements.length -1; i ++){
-            const element = idea_dom_elements[i]
-            const next_element = idea_dom_elements[i+1]
-
-            const rect = element.getBoundingClientRect()
-            const next_rect = next_element.getBoundingClientRect()
-
-            if (ghost.y > rect.y && 
-                ghost.y < next_rect.y
-            ) {
-                setHoverIndex(i)
-                to_index = i 
-            }
-
-
-
-          }
-        } else {
-          console.log("IS OVER THE BORDER")
-          setPrevIndex(null)
-          setHoverIndex(null)
-          if (ghost.x < blue_rect.right &&
-              ghost.x > blue_rect.left &&
-              ghost.y > blue_rect.top &&
-              ghost.y < blue_rect.bottom
-          ) {
-            setIsOverBlue(true)
-            is_over = true
-          } else {
-            setIsOverBlue(false)
-            is_over = false
-          }
-
-
-        }
-   
-
-
-    }
+      setCategories((prev) => ({
+        ...prev,
+        [category_key]: { ...prev[category_key], x: new_x, y: new_y },
+      }));
+    };
 
     const onMouseUp = () => {
-        // Update the order array instead of the ideas object
-        let updated_order = ideaIdOrder
+      set_position_category(category_key, { x: new_x, y: new_y });
+      document.removeEventListener("mousemove", onMouseMove);
+      document.removeEventListener("mouseup", onMouseUp);
+    };
 
-        setIdIdeaOrder((prevOrder) => {
-          const newOrder = [...prevOrder]
-          const [movedId] = newOrder.splice(from_index, 1)
-          newOrder.splice(to_index, 0, movedId)
-          updated_order = newOrder
-          return newOrder
-        })
+    document.addEventListener("mousemove", onMouseMove);
+    document.addEventListener("mouseup", onMouseUp);
+  };
 
-        if (is_over) {
-          console.log("IDEA MMMMMMMMMMMMMMMMMMMMMMMMMMMMMM: ", idea.id)
-          set_category(idea.id, "blue")
-        }
+  const customFormButtonClick = () => {
+    setDisplayForm(false);
+    fetch_categories();
+  };
 
+  // ===== IDEA API =====
 
-        safe_order(updated_order)
+  const fetch_all_ideas = async () => {
+    try {
+      const res = await fetch(`${API}/get_all_ideas/`);
+      const data = await res.json();
+      const idea_list = data?.data || [];
+      const order = data?.order || [];
+      const cat_orders = data?.category_orders || {};
 
-        setDragging(null)
-        setPrevIndex(null)
-        setHoverIndex(null)
+      const idea_object = {};
+      for (let i = 0; i < idea_list.length; i++) {
+        const idea = idea_list[i];
+        idea_object[idea.id] = { ...idea };
+      }
 
-        document.removeEventListener("mousemove", onMouseMove)
-        document.removeEventListener("mouseup", onMouseUp)
+      setIdeas(idea_object);
+      setUnassignedOrder(order);
+      setCategoryOrders(cat_orders);
+    } catch (err) {
+      console.error("Failed to fetch ideas:", err);
+    }
+  };
+
+  const create_idea = async () => {
+    await fetch(`${API}/create_idea/`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ idea_name: ideaName, description: ideaDescription }),
+    });
+    fetch_all_ideas();
+  };
+
+  const delete_idea = async (idea_id) => {
+    await fetch(`${API}/delete_idea/`, {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: idea_id }),
+    });
+    fetch_all_ideas();
+  };
+
+  const safe_order = async (new_order, category_id = null) => {
+    await fetch(`${API}/safe_order/`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ order: new_order, category_id }),
+    });
+  };
+
+  const assign_idea_to_category = async (idea_id, category_id) => {
+    await fetch(`${API}/assign_idea_to_category/`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ idea_id, category_id }),
+    });
+    fetch_all_ideas();
+  };
+
+  // ===== UNIFIED IDEA DRAG =====
+  // Works from unassigned list AND from inside categories.
+  // source: { type: "unassigned" } or { type: "category", id: catId }
+
+  const isPointInRect = (px, py, rect) => {
+    return (
+      px >= rect.left && px <= rect.right && py >= rect.top && py <= rect.bottom
+    );
+  };
+
+  const handleIdeaDrag = (event, idea, index, source) => {
+    const from_index = index;
+    let to_index = index;
+    let drop_target = null;
+
+    let ghost = { idea, x: event.clientX, y: event.clientY };
+
+    setDragging(ghost);
+    setPrevIndex(index);
+    setDragSource(source);
+
+    // Snapshot source DOM elements for reorder detection
+    let sourceDomElements = [];
+    if (source.type === "unassigned" && IdeaListRef.current) {
+      sourceDomElements = [
+        ...IdeaListRef.current.querySelectorAll("[data-idea-item]"),
+      ];
+    } else if (
+      source.type === "category" &&
+      categoryRefs.current[source.id]
+    ) {
+      sourceDomElements = [
+        ...categoryRefs.current[source.id].querySelectorAll("[data-idea-item]"),
+      ];
     }
 
+    const onMouseMove = (e) => {
+      ghost = { ...ghost, x: e.clientX, y: e.clientY };
+      setDragging(ghost);
 
-    document.addEventListener("mousemove", onMouseMove)
-    document.addEventListener("mouseup", onMouseUp)
-  }
+      // Check if hovering over unassigned list
+      let foundUnassigned = false;
+      if (IdeaListRef.current) {
+        const listRect = IdeaListRef.current.getBoundingClientRect();
+        if (isPointInRect(e.clientX, e.clientY, listRect)) {
+          foundUnassigned = true;
+        }
+      }
 
+      // Check if hovering over any category
+      let foundCategory = null;
+      if (!foundUnassigned && categoryContainerRef.current) {
+        const containerRect =
+          categoryContainerRef.current.getBoundingClientRect();
+        for (const [catId, catData] of Object.entries(categories)) {
+          const catRect = {
+            left: containerRect.left + catData.x,
+            top: containerRect.top + catData.y,
+            right: containerRect.left + catData.x + catData.width,
+            bottom: containerRect.top + catData.y + catData.height,
+          };
+          if (isPointInRect(e.clientX, e.clientY, catRect)) {
+            foundCategory = catId;
+            break;
+          }
+        }
+      }
 
+      setHoverCategory(foundCategory);
+      setHoverUnassigned(foundUnassigned);
+      drop_target = foundCategory
+        ? { type: "category", id: foundCategory }
+        : foundUnassigned
+        ? { type: "unassigned" }
+        : null;
 
+      // Reorder within source if still hovering over it
+      const isOverSource =
+        (source.type === "unassigned" && foundUnassigned) ||
+        (source.type === "category" &&
+          foundCategory === String(source.id));
 
+      if (isOverSource && sourceDomElements.length > 1) {
+        for (let i = 0; i < sourceDomElements.length - 1; i++) {
+          const rect = sourceDomElements[i].getBoundingClientRect();
+          const next_rect =
+            sourceDomElements[i + 1].getBoundingClientRect();
+          if (ghost.y > rect.y && ghost.y < next_rect.y) {
+            setHoverIndex(i);
+            to_index = i;
+          }
+        }
+      } else {
+        setHoverIndex(null);
+      }
+    };
 
+    const onMouseUp = () => {
+      const sameSource =
+        drop_target &&
+        ((drop_target.type === source.type &&
+          drop_target.type === "unassigned") ||
+          (drop_target.type === "category" &&
+            source.type === "category" &&
+            String(drop_target.id) === String(source.id)));
 
+      if (sameSource) {
+        // Reorder within same list
+        if (source.type === "unassigned") {
+          let updated_order = unassignedOrder;
+          setUnassignedOrder((prevOrder) => {
+            const newOrder = [...prevOrder];
+            const [movedId] = newOrder.splice(from_index, 1);
+            newOrder.splice(to_index, 0, movedId);
+            updated_order = newOrder;
+            return newOrder;
+          });
+          safe_order(updated_order, null);
+        } else if (source.type === "category") {
+          let updated_order = categoryOrders[source.id] || [];
+          setCategoryOrders((prev) => {
+            const newOrder = [...(prev[source.id] || [])];
+            const [movedId] = newOrder.splice(from_index, 1);
+            newOrder.splice(to_index, 0, movedId);
+            updated_order = newOrder;
+            return { ...prev, [source.id]: newOrder };
+          });
+          safe_order(updated_order, source.id);
+        }
+      } else if (drop_target) {
+        // Moving to a DIFFERENT target
+        const target_category_id =
+          drop_target.type === "category" ? parseInt(drop_target.id) : null;
+        assign_idea_to_category(idea.id, target_category_id);
+      }
 
+      setDragging(null);
+      setPrevIndex(null);
+      setHoverIndex(null);
+      setDragSource(null);
+      setHoverCategory(null);
+      setHoverUnassigned(false);
 
+      document.removeEventListener("mousemove", onMouseMove);
+      document.removeEventListener("mouseup", onMouseUp);
+    };
 
+    document.addEventListener("mousemove", onMouseMove);
+    document.addEventListener("mouseup", onMouseUp);
+  };
 
+  // ===== INIT =====
 
+  useEffect(() => {
+    fetch_categories();
+    fetch_all_ideas();
+  }, []);
+
+  // ===== RENDER HELPER =====
+
+  const renderIdeaItem = (ideaId, arrayIndex, source) => {
+    const idea = ideas[ideaId];
+    if (!idea) return null;
+
+    const isSource =
+      dragSource &&
+      dragSource.type === source.type &&
+      (source.type === "unassigned" ||
+        String(dragSource.id) === String(source.id));
+
+    return (
+      <div key={`${idea.title}_${ideaId}`} data-idea-item="true">
+        {/* Drop indicator */}
+        <div
+          style={{
+            opacity: isSource && arrayIndex === hoverIndex ? 1 : 0,
+            transform:
+              isSource && arrayIndex === hoverIndex
+                ? "translateY(2px)"
+                : "translateY(0px)",
+            transition: "opacity 100ms ease",
+          }}
+          className="w-full h-1 my-[1px] rounded bg-gray-700"
+        />
+
+        <div
+          onMouseDown={(e) => {
+            e.stopPropagation();
+            handleIdeaDrag(e, idea, arrayIndex, source);
+          }}
+          style={{
+            backgroundColor:
+              isSource && arrayIndex === prevIndex ? "gray" : "#1a1a1a",
+            transform:
+              isSource &&
+              hoverIndex !== null &&
+              arrayIndex >= hoverIndex &&
+              arrayIndex !== prevIndex
+                ? "translateY(6px)"
+                : "translateY(0px)",
+            transition: "transform 200ms ease, background-color 200ms ease",
+          }}
+          className="h-8 w-full rounded text-white px-2 flex justify-between items-center text-sm mb-1 cursor-grab"
+        >
+          <div className="truncate">{idea.title}</div>
+          <div>
+            <DeleteForeverIcon
+              onClick={(e) => {
+                e.stopPropagation();
+                delete_idea(idea.id);
+              }}
+              className="hover:text-red-500!"
+              style={{ fontSize: 16 }}
+            />
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  // ===== JSX =====
 
   return (
     <>
-      <div className="h-screen w-screen p-10">
-        <div className="h-full w-full rounded bg-white flex shadow-2xl border border-gray-300">
-          <div className="w-1/4 select-none">
-            {/* Form */}
-            <div className="h-4/10 bg-gray-100 p-2">
+      <div className="h-screen w-screen p-10 flex justify-center items-center select-none">
+        {/* Create Category Form Overlay */}
+        <div
+          style={{ display: displayForm ? "block" : "none" }}
+          className="fixed z-2"
+        >
+          <CreateCategoryForm onButtonClick={customFormButtonClick} />
+        </div>
+        <div
+          style={{ display: displayForm ? "block" : "none" }}
+          className="h-full w-full fixed bg-black/40 z-1"
+        />
+
+        <div className="h-full w-full bg-white shadow-2xl border border-gray-300 rounded flex">
+          {/* ===== LEFT SIDEBAR ===== */}
+          <div className="w-1/4 h-full shadow-xl bg-gray-200 border border-gray-200 select-none flex flex-col">
+            {/* Create Idea Form */}
+            <div className="bg-gray-100 p-2 flex-shrink-0">
               <h1 className="text-2xl mb-2">Create ideas</h1>
-              <div className="flex flex-col gap-1 md:gap-5">
+              <div className="flex flex-col gap-1 md:gap-3">
                 <TextField
-                  onChange={(e) => {
-                    setIdeaBeingCreated(e.target.value);
-                  }}
-                  id="standard-basic"
+                  value={ideaName}
+                  onChange={(e) => setIdeaName(e.target.value)}
+                  id="idea-name"
                   label="Idea name"
                   variant="outlined"
+                  size="small"
                 />
                 <TextField
-                  onChange={(e) => {
-                    setIdeaBeingCreated(e.target.value);
-                  }}
+                  value={ideaDescription}
+                  onChange={(e) => setIdeaDescription(e.target.value)}
                   multiline
-                  rows={4}
-                  
+                  rows={3}
                   id="idea-description"
                   label="Description"
                   variant="outlined"
+                  size="small"
                   fullWidth
                 />
-       
-
-
-
                 <Button
-                  onClick={() => {
-                    create_idea();
-                  }}
-                  className="text-black!"
-                  sx={{
-                    backgroundColor: "#6cff4e",
-                    "&:hover": { backgroundColor: "#4bad38" },
-                  }}
-                  variant="contained"
-                >
-                  Create
-                </Button>
+                  handleButtonClick={() => create_idea()}
+                  text={"Create"}
+                />
               </div>
             </div>
 
-            {/* Task List */}
-            <div 
-            ref={IdeaListRef}
-            className="h-8/10  p-2 relative">
-              <h1 className="text-2xl">The ideas</h1>
-              
-              
-              
-              {ideaIdOrder.map((ideaId, arrayIndex) => {
-                // console.log("ideaId", ideaId)
-                // console.log("arrayIndex", arrayIndex)
-
-                const idea = ideas[ideaId]
-                if (!idea) return null
-                // console.log("idea: ", index,  idea)
-                return (
-                    <div
-                    key={`${idea.name}_${ideaId}`}>
-                        <div 
-                        style={{
-                            opacity: arrayIndex === hoverIndex ? 1 : 0,
-                            transform: arrayIndex === hoverIndex
-                            ? "translateY(5px)"
-                            : "translateY(0px)",
-                            transition: "opacity 100ms ease"
-                        }}
-                        className="w-full h-2  my-[1px] rounded bg-gray-700">
-                        </div>
-
-
-                        <div
-                            onMouseDown={(e)=>{handleDrag(e, idea, arrayIndex)}}
-                            style={{
-                                backgroundColor: arrayIndex === prevIndex ? "gray" : "black",
-                                transform: hoverIndex !== null && arrayIndex >= hoverIndex && arrayIndex !== prevIndex
-                                  ? "translateY(10px)"
-                                  : "translateY(0px)",
-                                transition: "transform 200ms ease, background-color 200ms ease",
-                            }}
-                            className="h-10 w-full 
-                                            rounded text-white px-2 flex justify-between items-center
-                                            "
-                            key={idea.name}
-                        >
-                            <div>{idea.name}/Cat: {idea.category}</div>
-                            <div>
-                            <DeleteForeverIcon
-                                onClick={() => {
-                                delete_idea(idea.name);
-                                }}
-                                className="
-                                hover:text-red-500!"
-                            />
-                            </div>
-                        </div>
-
-                        
-
-                        
-                  </div>
-                );
-              })}
-
-              {/* GHOST & DRAGGING */}
-              {dragging && (
-                <div 
-                style={{
-                    top: `${dragging.y}px`,
-                    left: `${dragging.x}px`,
-                    transform: "translate(-100%, -100%)",
-                    animation: "pickUp 150ms ease forwards",
-                    
-                }}
-                
-                className="fixed h-10 shadow border border-white/20 shadow-gray-700 bg-black rounded mt-2 text-white px-2 flex justify-between items-center">
-                  <div>{dragging.idea.name}/Cat: {dragging.idea.category}</div>
-                </div>
+            {/* Unassigned Idea List */}
+            <div
+              ref={IdeaListRef}
+              style={{
+                backgroundColor:
+                  dragging && hoverUnassigned ? "#c7cbd1" : "#e5e7eb",
+                transition: "background-color 150ms ease",
+              }}
+              className="flex-1 p-2 relative overflow-y-auto"
+            >
+              <h1 className="text-xl mb-1">Unassigned Ideas</h1>
+              {unassignedOrder.map((ideaId, arrayIndex) =>
+                renderIdeaItem(ideaId, arrayIndex, { type: "unassigned" })
               )}
-
-
-
-
-
-
-
             </div>
           </div>
 
-          {/* Color Containers */}
-          <div className="w-3/4 bg-red-200 flex select-none">
-            <div className="bg-white h-full w-full">
-              <div className="w-full h-1/2  flex">
-                <div className="w-1/2 h-full bg-blue-200">
-                  <div className="h-1/7 ">
-                    <h1
-                    style={{
-                      color: "#040084" 
-                    }}
-                    className="px-5 text-[50px] font-bold"
-                    >Blue</h1>
-                  </div>
-                  <div className="h-6/7 p-5">
-                    <div 
-                    ref={blueRef}
-                    style={{
-                      backgroundColor: isOverBlue ? "#aca9ff" : "#ffffff"
-                    }}
-                    className="h-full w-full bg-white rounded">
+          {/* ===== CATEGORY CONTAINER ===== */}
+          <div
+            ref={categoryContainerRef}
+            className="w-3/4 h-full shadow-xl border border-gray-200 relative overflow-hidden"
+          >
+            {/* Category Displays */}
+            {Object.entries(categories).map(
+              ([category_key, category_data]) => {
+                const catIdeas = categoryOrders[category_key] || [];
+                const isHovered =
+                  dragging &&
+                  String(hoverCategory) === String(category_key);
 
+                return (
+                  <div
+                    onMouseDown={(e) => {
+                      if (!e.ctrlKey) {
+                        handleCategoryDrag(e, category_key);
+                      }
+                    }}
+                    style={{
+                      left: category_data.x,
+                      top: category_data.y,
+                      width: category_data.width,
+                      height: category_data.height,
+                      zIndex: category_data.z_index || 0,
+                      backgroundColor: isHovered ? "#fde68a" : "#fef08a",
+                      transition: "background-color 150ms ease",
+                    }}
+                    key={category_key}
+                    className="absolute shadow-xl rounded p-2 flex flex-col"
+                  >
+                    {/* Category header */}
+                    <div className="flex justify-between items-center mb-1 flex-shrink-0">
+                      <span className="font-semibold text-sm truncate">
+                        {category_data.name}
+                      </span>
+                      <div className="flex items-center gap-1">
+                        <FlipToFrontIcon
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            bring_to_front_category(category_key);
+                          }}
+                          className="hover:text-blue-600! cursor-pointer"
+                          style={{ fontSize: 18 }}
+                          titleAccess="Bring to front"
+                        />
+                        <DeleteForeverIcon
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            delete_category(category_key);
+                          }}
+                          className="hover:text-red-500! cursor-pointer"
+                          style={{ fontSize: 18 }}
+                        />
+                      </div>
+                    </div>
+
+                    {/* Ideas inside category (scrollable) */}
+                    <div
+                      ref={(el) =>
+                        (categoryRefs.current[category_key] = el)
+                      }
+                      className="flex-1 overflow-y-auto overflow-x-hidden"
+                      onMouseDown={(e) => e.stopPropagation()}
+                    >
+                      {catIdeas.map((ideaId, arrayIndex) =>
+                        renderIdeaItem(ideaId, arrayIndex, {
+                          type: "category",
+                          id: category_key,
+                        })
+                      )}
                     </div>
                   </div>
-                    
-                </div>
-                <div className="w-1/2 h-full bg-yellow-200"></div>
-              </div>
+                );
+              }
+            )}
 
-              <div className="w-full h-1/2 flex">
-                <div className="w-1/2 h-full bg-red-200"></div>
-                <div className="w-1/2 h-full bg-green-200"></div>
-              </div>
+            {/* Create Category Button */}
+            <div
+              onClick={() => setDisplayForm(true)}
+              className="absolute top-5 right-5"
+            >
+              <Button
+                text={"Create Category"}
+                handleButtonClick={() => setDisplayForm(false)}
+              />
             </div>
           </div>
         </div>
       </div>
+
+      {/* GHOST (dragging indicator - rendered outside main layout) */}
+      {dragging && (
+        <div
+          style={{
+            top: `${dragging.y}px`,
+            left: `${dragging.x}px`,
+            transform: "translate(-50%, -100%)",
+            pointerEvents: "none",
+          }}
+          className="fixed h-8 shadow border border-white/20 shadow-gray-700 bg-black rounded text-white px-2 flex items-center text-sm z-50"
+        >
+          {dragging.idea.title}
+        </div>
+      )}
     </>
   );
 }

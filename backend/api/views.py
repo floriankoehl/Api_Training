@@ -1,93 +1,8 @@
-# from rest_framework.decorators import api_view
-# from rest_framework.response import Response
-# from rest_framework import serializers
-
-# from .models import Task, Idea, IdeaOrder
-
 from .models import *
+from django.db import models as db_models
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
 from rest_framework import serializers
-
-
-# class TaskSerializer(serializers.ModelSerializer):
-#     class Meta:
-#         model = Task
-#         fields = "__all__"
-
-
-# @api_view(["GET"])
-# def get_all_tasks(request):
-#     tasks = Task.objects.all()
-#     serializer = TaskSerializer(tasks, many=True)
-#     return Response(serializer.data)
-
-
-# @api_view(["POST"])
-# def create_task(request):
-#     title = request.data.get("task_title", "").strip()
-#     if not title:
-#         return Response({"error": "Title is required"}, status=400)
-#     task, created = Task.objects.get_or_create(title=title)
-#     return Response(TaskSerializer(task).data, status=201 if created else 200)
-
-
-# @api_view(["DELETE"])
-# def delete_task(request):
-#     title = request.data.get("title_to_delete")
-#     Task.objects.filter(title=title).delete()
-#     return Response({"deleted": True})
-
-
-# @api_view(["PATCH"])
-# def update_task(request, pk):
-#     """Partial update a single task (done, x, y, etc.)."""
-#     try:
-#         task = Task.objects.get(pk=pk)
-#     except Task.DoesNotExist:
-#         return Response({"error": "Not found"}, status=404)
-#     serializer = TaskSerializer(task, data=request.data, partial=True)
-#     if serializer.is_valid():
-#         serializer.save()
-#         return Response(serializer.data)
-#     return Response(serializer.errors, status=400)
-
-
-# @api_view(["POST"])
-# def toggle_done(request):
-#     title = request.data.get("title_to_mark")
-#     done_type = request.data.get("type", "toggle")
-#     task = Task.objects.get(title=title)
-
-#     if done_type == "done":
-#         task.done = True
-#     elif done_type == "scheduled":
-#         task.done = False
-#     else:
-#         task.done = not task.done
-#     task.save()
-#     return Response(TaskSerializer(task).data)
-
-
-# @api_view(["POST"])
-# def update_x_and_y_of_tasks(request):
-#     all_tasks = request.data.get("tasks", {})
-#     for task_name, task_data in all_tasks.items():
-#         Task.objects.filter(title=task_name).update(
-#             x=task_data.get("x", 0),
-#             y=task_data.get("y", 0),
-#         )
-#     return Response({"updated": True})
-
-
-
-
-
-
-# # class TaskSerializer(serializers.ModelSerializer):
-# #     class Meta:
-# #         model = Task
-# #         fields = "__all__"
 
 
 
@@ -101,8 +16,24 @@ class IdeaSerializer(serializers.ModelSerializer):
 def get_all_ideas(request):
     all_ideas = Idea.objects.all()
     all_ideas_serialized = IdeaSerializer(all_ideas, many=True).data
-    order = list(Idea.objects.order_by('order_index').values_list('id', flat=True))
-    return Response({"data": all_ideas_serialized, "order": order})
+    # Build order arrays per category (None = unassigned)
+    unassigned_order = list(
+        Idea.objects.filter(category__isnull=True)
+        .order_by('order_index')
+        .values_list('id', flat=True)
+    )
+    category_orders = {}
+    for cat in Category.objects.all():
+        category_orders[cat.id] = list(
+            Idea.objects.filter(category=cat)
+            .order_by('order_index')
+            .values_list('id', flat=True)
+        )
+    return Response({
+        "data": all_ideas_serialized,
+        "order": unassigned_order,
+        "category_orders": category_orders,
+    })
 
 
 @api_view(["POST"])
@@ -128,9 +59,36 @@ def delete_idea(request):
 @api_view(["POST"])
 def safe_order(request):
     new_order = request.data.get("order", [])
+    category_id = request.data.get("category_id")  # None for unassigned list
     for index, idea_id in enumerate(new_order):
-        Idea.objects.filter(id=idea_id).update(order_index=index)
+        updates = {"order_index": index}
+        if category_id is not None:
+            updates["category_id"] = category_id
+        else:
+            updates["category"] = None
+        Idea.objects.filter(id=idea_id).update(**updates)
     return Response({"successful": True})
+
+
+@api_view(["POST"])
+def assign_idea_to_category(request):
+    idea_id = request.data.get("idea_id")
+    category_id = request.data.get("category_id")  # None to unassign
+    idea = Idea.objects.get(id=idea_id)
+    if category_id is not None:
+        idea.category_id = category_id
+        max_order = Idea.objects.filter(category_id=category_id).aggregate(
+            db_models.Max('order_index')
+        )['order_index__max']
+        idea.order_index = (max_order + 1) if max_order is not None else 0
+    else:
+        idea.category = None
+        max_order = Idea.objects.filter(category__isnull=True).aggregate(
+            db_models.Max('order_index')
+        )['order_index__max']
+        idea.order_index = (max_order + 1) if max_order is not None else 0
+    idea.save()
+    return Response({"updated": True})
 
 
 
@@ -141,16 +99,11 @@ class CategorySerializer(serializers.ModelSerializer):
         fields = "__all__"
 
 
-
-
-
 @api_view(["GET"])
 def get_all_categories(request):
     all_categories = Category.objects.all()
     all_cats_ready = CategorySerializer(all_categories, many=True).data
     return Response({"categories": all_cats_ready})
-
-
 
 
 @api_view(["POST"])
@@ -169,11 +122,6 @@ def create_category(request):
         return Response({"status": "category already existed", "category": category_serialized}, status=200)
 
 
-
-
-# id: category_id,
-# position: new_position
-
 @api_view(["POST"])
 def set_position_category(request):
     category_id = request.data.get("id")
@@ -186,24 +134,31 @@ def set_position_category(request):
     return Response({"test": "test"})
 
 
-
-
-
 @api_view(["POST"])
 def set_area_category(request):
-    data = request.data.get("")
-    return Response({"test": "test"})
+    category_id = request.data.get("id")
+    category = Category.objects.get(id=category_id)
+    category.width = request.data.get("width", category.width)
+    category.height = request.data.get("height", category.height)
+    category.save()
+    return Response({"updated": True})
 
 
-
-
-
+@api_view(["DELETE"])
+def delete_category(request):
+    category_id = request.data.get("id")
+    # Reset all ideas in this category back to unassigned
+    Idea.objects.filter(category_id=category_id).update(category=None)
+    Category.objects.filter(id=category_id).delete()
+    return Response({"deleted": True})
 
 
 @api_view(["POST"])
-def delete_category(request):
-    data = request.data.get("")
-    return Response({"test": "test"})
+def bring_to_front_category(request):
+    category_id = request.data.get("id")
+    max_z = Category.objects.aggregate(db_models.Max('z_index'))['z_index__max'] or 0
+    Category.objects.filter(id=category_id).update(z_index=max_z + 1)
+    return Response({"updated": True})
 
 
 
