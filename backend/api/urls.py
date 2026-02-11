@@ -27,4 +27,7 @@ urlpatterns = [
     path("delete_idea/", delete_idea),
     path("safe_order/", safe_order),
     path("assign_idea_to_category/", assign_idea_to_category),
+    path("rename_category/", rename_category),
+    path("update_idea_title/", update_idea_title),
+    path("toggle_archive_category/", toggle_archive_category),
 ]

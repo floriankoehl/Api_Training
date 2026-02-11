@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 import TextField from "@mui/material/TextField";
 import DeleteForeverIcon from "@mui/icons-material/DeleteForever";
-import FlipToFrontIcon from "@mui/icons-material/FlipToFront";
+import EditIcon from "@mui/icons-material/Edit";
+import ArchiveIcon from "@mui/icons-material/Archive";
+import UnarchiveIcon from "@mui/icons-material/Unarchive";
 
 const API = "http://127.0.0.1:8000/api";
 
@@ -30,18 +32,26 @@ function CreateCategoryForm({ onButtonClick }) {
   };
 
   const button_click = async () => {
+    if (!categoryName.trim()) return;
     await create_category();
+    setCategoryName("");
     onButtonClick();
   };
 
   return (
     <div className="w-100 border border-gray-300 p-5 rounded shadow-xl bg-white justify-center items-center">
       <div className="flex flex-col mb-4">
-        {categoryName}
         <TextField
+          value={categoryName}
           onChange={(e) => setCategoryName(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              e.preventDefault();
+              button_click();
+            }
+          }}
           id="outlined-basic"
-          label="Name"
+          label="Category Name"
           variant="outlined"
         />
       </div>
@@ -49,6 +59,32 @@ function CreateCategoryForm({ onButtonClick }) {
         <Button handleButtonClick={button_click} text={"Create"} />
       </div>
     </div>
+  );
+}
+
+/* ===== CONFIRM MODAL ===== */
+function ConfirmModal({ message, onConfirm, onCancel }) {
+  return (
+    <>
+      <div className="fixed inset-0 bg-black/40 z-40" onClick={onCancel} />
+      <div className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-white rounded-lg shadow-2xl p-6 z-50 min-w-[300px]">
+        <p className="text-base mb-5">{message}</p>
+        <div className="flex justify-end gap-3">
+          <button
+            onClick={onCancel}
+            className="px-4 py-2 rounded border border-gray-300 hover:bg-gray-100 transition-colors"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={onConfirm}
+            className="px-4 py-2 rounded bg-red-500 text-white hover:bg-red-600 transition-colors"
+          >
+            Delete
+          </button>
+        </div>
+      </div>
+    </>
   );
 }
 
@@ -72,6 +108,18 @@ export default function IdeaBinV2() {
   const [hoverIndex, setHoverIndex] = useState(null);
   const [hoverCategory, setHoverCategory] = useState(null);
   const [hoverUnassigned, setHoverUnassigned] = useState(false);
+
+  // Edit state
+  const [editingCategoryId, setEditingCategoryId] = useState(null);
+  const [editingCategoryName, setEditingCategoryName] = useState("");
+  const [editingIdeaId, setEditingIdeaId] = useState(null);
+  const [editingIdeaTitle, setEditingIdeaTitle] = useState("");
+
+  // Confirm modal
+  const [confirmModal, setConfirmModal] = useState(null);
+
+  // Archive drawer
+  const [showArchive, setShowArchive] = useState(false);
 
   const IdeaListRef = useRef(null);
   const categoryRefs = useRef({});
@@ -101,7 +149,8 @@ export default function IdeaBinV2() {
       const maxWidth = containerRect.width - category.x;
       const maxHeight = containerRect.height - category.y;
 
-      finalWidth = Math.max(50, Math.min(startWidth + deltaX, maxWidth));
+      const minWidth = Math.max(80, category.name.length * 9 + 60);
+      finalWidth = Math.max(minWidth, Math.min(startWidth + deltaX, maxWidth));
       finalHeight = Math.max(50, Math.min(startHeight + deltaY, maxHeight));
 
       setCategories((prev) => ({
@@ -128,7 +177,7 @@ export default function IdeaBinV2() {
     if (!categoryContainerRef.current) return;
     const container_rect = categoryContainerRef.current.getBoundingClientRect();
 
-    const categoryList = Object.values(categories);
+    const categoryList = Object.values(categories).filter((c) => !c.archived);
     let hovering = false;
 
     for (let i = 0; i < categoryList.length; i++) {
@@ -184,14 +233,16 @@ export default function IdeaBinV2() {
       const serialized = {};
       for (let i = 0; i < all_categories.length; i++) {
         const c = all_categories[i];
+        const minWidth = Math.max(80, c.name.length * 9 + 60);
         serialized[c.id] = {
           id: c.id,
           name: c.name,
           x: c.x,
           y: c.y,
-          width: c.width,
+          width: Math.max(c.width, minWidth),
           height: c.height,
           z_index: c.z_index || 0,
+          archived: c.archived || false,
         };
       }
       setCategories(serialized);
@@ -217,17 +268,39 @@ export default function IdeaBinV2() {
   };
 
   const delete_category = async (category_id) => {
-    await fetch(`${API}/delete_category/`, {
-      method: "DELETE",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id: category_id }),
+    try {
+      const res = await fetch(`${API}/delete_category/`, {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: category_id }),
+      });
+      if (res.ok) {
+        setCategories((prev) => {
+          const updated = { ...prev };
+          delete updated[category_id];
+          return updated;
+        });
+        setCategoryOrders((prev) => {
+          const updated = { ...prev };
+          delete updated[category_id];
+          return updated;
+        });
+        await fetch_all_ideas();
+      }
+    } catch (err) {
+      console.error("Failed to delete category:", err);
+    }
+  };
+
+  const confirm_delete_category = (category_id, category_name) => {
+    setConfirmModal({
+      message: `Delete category "${category_name}"? Its ideas will become unassigned.`,
+      onConfirm: () => {
+        delete_category(category_id);
+        setConfirmModal(null);
+      },
+      onCancel: () => setConfirmModal(null),
     });
-    setCategories((prev) => {
-      const updated = { ...prev };
-      delete updated[category_id];
-      return updated;
-    });
-    fetch_all_ideas();
   };
 
   const bring_to_front_category = async (category_id) => {
@@ -248,11 +321,39 @@ export default function IdeaBinV2() {
     });
   };
 
+  const rename_category_api = async (category_id, new_name) => {
+    await fetch(`${API}/rename_category/`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: category_id, name: new_name }),
+    });
+    setCategories((prev) => ({
+      ...prev,
+      [category_id]: { ...prev[category_id], name: new_name },
+    }));
+  };
+
+  const toggle_archive_category = async (category_id) => {
+    const res = await fetch(`${API}/toggle_archive_category/`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: category_id }),
+    });
+    const data = await res.json();
+    setCategories((prev) => ({
+      ...prev,
+      [category_id]: { ...prev[category_id], archived: data.archived },
+    }));
+  };
+
   // ===== CATEGORY DRAG (clamped) =====
 
   const handleCategoryDrag = (event, category_key) => {
     const category = categories[category_key];
     const containerRect = categoryContainerRef.current.getBoundingClientRect();
+
+    // Auto bring-to-front on click/drag
+    bring_to_front_category(category_key);
 
     const startX = event.clientX - category.x;
     const startY = event.clientY - category.y;
@@ -312,6 +413,7 @@ export default function IdeaBinV2() {
             const updated = { ...prev };
             let changed = false;
             for (const [key, cat] of Object.entries(updated)) {
+              if (cat.archived) continue;
               const maxX = Math.max(0, containerRect.width - cat.width);
               const maxY = Math.max(0, containerRect.height - cat.height);
               const clampedX = Math.max(0, Math.min(cat.x, maxX));
@@ -376,6 +478,19 @@ export default function IdeaBinV2() {
     fetch_all_ideas();
   };
 
+  const update_idea_title_api = async (idea_id, new_title) => {
+    if (!new_title.trim()) return;
+    await fetch(`${API}/update_idea_title/`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: idea_id, title: new_title }),
+    });
+    setIdeas((prev) => ({
+      ...prev,
+      [idea_id]: { ...prev[idea_id], title: new_title },
+    }));
+  };
+
   const safe_order = async (new_order, category_id = null) => {
     await fetch(`${API}/safe_order/`, {
       method: "POST",
@@ -394,8 +509,6 @@ export default function IdeaBinV2() {
   };
 
   // ===== UNIFIED IDEA DRAG =====
-  // Works from unassigned list AND from inside categories.
-  // source: { type: "unassigned" } or { type: "category", id: catId }
 
   const isPointInRect = (px, py, rect) => {
     return (
@@ -414,7 +527,6 @@ export default function IdeaBinV2() {
     setPrevIndex(index);
     setDragSource(source);
 
-    // Snapshot source DOM elements for reorder detection
     let sourceDomElements = [];
     if (source.type === "unassigned" && IdeaListRef.current) {
       sourceDomElements = [
@@ -433,7 +545,6 @@ export default function IdeaBinV2() {
       ghost = { ...ghost, x: e.clientX, y: e.clientY };
       setDragging(ghost);
 
-      // Check if hovering over unassigned list
       let foundUnassigned = false;
       if (IdeaListRef.current) {
         const listRect = IdeaListRef.current.getBoundingClientRect();
@@ -442,12 +553,12 @@ export default function IdeaBinV2() {
         }
       }
 
-      // Check if hovering over any category
       let foundCategory = null;
       if (!foundUnassigned && categoryContainerRef.current) {
         const containerRect =
           categoryContainerRef.current.getBoundingClientRect();
         for (const [catId, catData] of Object.entries(categories)) {
+          if (catData.archived) continue;
           const catRect = {
             left: containerRect.left + catData.x,
             top: containerRect.top + catData.y,
@@ -469,7 +580,6 @@ export default function IdeaBinV2() {
         ? { type: "unassigned" }
         : null;
 
-      // Reorder within source if still hovering over it
       const isOverSource =
         (source.type === "unassigned" && foundUnassigned) ||
         (source.type === "category" &&
@@ -500,7 +610,6 @@ export default function IdeaBinV2() {
             String(drop_target.id) === String(source.id)));
 
       if (sameSource) {
-        // Reorder within same list
         if (source.type === "unassigned") {
           let updated_order = unassignedOrder;
           setUnassignedOrder((prevOrder) => {
@@ -523,7 +632,6 @@ export default function IdeaBinV2() {
           safe_order(updated_order, source.id);
         }
       } else if (drop_target) {
-        // Moving to a DIFFERENT target
         const target_category_id =
           drop_target.type === "category" ? parseInt(drop_target.id) : null;
         assign_idea_to_category(idea.id, target_category_id);
@@ -563,8 +671,10 @@ export default function IdeaBinV2() {
       (source.type === "unassigned" ||
         String(dragSource.id) === String(source.id));
 
+    const isEditing = editingIdeaId === ideaId;
+
     return (
-      <div key={`${idea.title}_${ideaId}`} data-idea-item="true">
+      <div key={`idea_${ideaId}`} data-idea-item="true">
         {/* Drop indicator */}
         <div
           style={{
@@ -578,40 +688,77 @@ export default function IdeaBinV2() {
           className="w-full h-1 my-[1px] rounded bg-gray-700"
         />
 
-        <div
-          onMouseDown={(e) => {
-            e.stopPropagation();
-            handleIdeaDrag(e, idea, arrayIndex, source);
-          }}
-          style={{
-            backgroundColor:
-              isSource && arrayIndex === prevIndex ? "gray" : "#1a1a1a",
-            transform:
-              isSource &&
-              hoverIndex !== null &&
-              arrayIndex >= hoverIndex &&
-              arrayIndex !== prevIndex
-                ? "translateY(6px)"
-                : "translateY(0px)",
-            transition: "transform 200ms ease, background-color 200ms ease",
-          }}
-          className="w-full rounded text-white px-2 py-1.5 flex justify-between items-start text-xs mb-1 cursor-grab leading-snug"
-        >
-          <div className="flex-1 mr-1 break-words">{idea.title}</div>
-          <div className="flex-shrink-0 mt-0.5">
-            <DeleteForeverIcon
-              onClick={(e) => {
-                e.stopPropagation();
-                delete_idea(idea.id);
+        {isEditing ? (
+          <div className="w-full mb-1">
+            <input
+              autoFocus
+              value={editingIdeaTitle}
+              onChange={(e) => setEditingIdeaTitle(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  update_idea_title_api(ideaId, editingIdeaTitle);
+                  setEditingIdeaId(null);
+                } else if (e.key === "Escape") {
+                  setEditingIdeaId(null);
+                }
               }}
-              className="hover:text-red-500!"
-              style={{ fontSize: 14 }}
+              onBlur={() => {
+                update_idea_title_api(ideaId, editingIdeaTitle);
+                setEditingIdeaId(null);
+              }}
+              className="w-full bg-gray-800 text-white text-xs px-2 py-1.5 rounded outline-none border border-blue-400 leading-snug"
             />
           </div>
-        </div>
+        ) : (
+          <div
+            onMouseDown={(e) => {
+              e.stopPropagation();
+              handleIdeaDrag(e, idea, arrayIndex, source);
+            }}
+            style={{
+              backgroundColor:
+                isSource && arrayIndex === prevIndex ? "gray" : "#1a1a1a",
+              transform:
+                isSource &&
+                hoverIndex !== null &&
+                arrayIndex >= hoverIndex &&
+                arrayIndex !== prevIndex
+                  ? "translateY(6px)"
+                  : "translateY(0px)",
+              transition: "transform 200ms ease, background-color 200ms ease",
+            }}
+            className="w-full rounded text-white px-2 py-1.5 flex justify-between items-start text-xs mb-1 cursor-grab leading-snug"
+          >
+            <div className="flex-1 mr-1 break-words">{idea.title}</div>
+            <div className="flex-shrink-0 mt-0.5 flex items-center gap-0.5">
+              <EditIcon
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setEditingIdeaId(ideaId);
+                  setEditingIdeaTitle(idea.title);
+                }}
+                className="hover:text-blue-400! cursor-pointer"
+                style={{ fontSize: 13 }}
+              />
+              <DeleteForeverIcon
+                onClick={(e) => {
+                  e.stopPropagation();
+                  delete_idea(idea.id);
+                }}
+                className="hover:text-red-500!"
+                style={{ fontSize: 14 }}
+              />
+            </div>
+          </div>
+        )}
       </div>
     );
   };
+
+  // ===== ARCHIVE HELPERS =====
+
+  const archivedCategories = Object.values(categories).filter((c) => c.archived);
+  const activeCategories = Object.entries(categories).filter(([, c]) => !c.archived);
 
   // ===== JSX =====
 
@@ -621,14 +768,23 @@ export default function IdeaBinV2() {
         {/* Create Category Form Overlay */}
         <div
           style={{ display: displayForm ? "block" : "none" }}
-          className="fixed z-2"
+          className="fixed z-20"
         >
           <CreateCategoryForm onButtonClick={customFormButtonClick} />
         </div>
         <div
           style={{ display: displayForm ? "block" : "none" }}
-          className="h-full w-full fixed bg-black/40 z-1"
+          className="h-full w-full fixed bg-black/40 z-10"
         />
+
+        {/* Confirm Modal */}
+        {confirmModal && (
+          <ConfirmModal
+            message={confirmModal.message}
+            onConfirm={confirmModal.onConfirm}
+            onCancel={confirmModal.onCancel}
+          />
+        )}
 
         <div className="h-full w-full bg-white shadow-2xl border border-gray-300 rounded flex">
           {/* ===== LEFT SIDEBAR ===== */}
@@ -686,89 +842,172 @@ export default function IdeaBinV2() {
             ref={categoryContainerRef}
             className="flex-1 h-full shadow-xl border border-gray-200 relative overflow-hidden"
           >
-            {/* Category Displays */}
-            {Object.entries(categories).map(
-              ([category_key, category_data]) => {
-                const catIdeas = categoryOrders[category_key] || [];
-                const isHovered =
-                  dragging &&
-                  String(hoverCategory) === String(category_key);
+            {/* Create Category Button — always on top */}
+            <div className="absolute top-4 right-4 z-[9999] flex gap-2">
+              <Button
+                text={"Create Category"}
+                handleButtonClick={() => setDisplayForm(true)}
+              />
+              {archivedCategories.length > 0 && (
+                <div
+                  onClick={() => setShowArchive(!showArchive)}
+                  className="bg-white select-none shadow-xl border border-gray-200 rounded-full h-10 px-4
+                    flex justify-center items-center hover:bg-gray-100 active:bg-gray-300 cursor-pointer gap-1"
+                >
+                  <ArchiveIcon style={{ fontSize: 18 }} />
+                  <span className="text-sm">{archivedCategories.length}</span>
+                </div>
+              )}
+            </div>
 
-                return (
-                  <div
-                    onMouseDown={(e) => {
-                      if (!e.ctrlKey) {
-                        handleCategoryDrag(e, category_key);
-                      }
-                    }}
-                    style={{
-                      left: category_data.x,
-                      top: category_data.y,
-                      width: category_data.width,
-                      height: category_data.height,
-                      zIndex: category_data.z_index || 0,
-                      backgroundColor: isHovered ? "#fde68a" : "#fef08a",
-                      transition: "background-color 150ms ease",
-                    }}
-                    key={category_key}
-                    className="absolute shadow-xl rounded p-2 flex flex-col"
-                  >
-                    {/* Category header (drag handle) */}
-                    <div className="flex justify-between items-center mb-1 flex-shrink-0 bg-amber-300/50 rounded-t px-1 py-0.5 cursor-grab active:cursor-grabbing border-b border-amber-400/40">
-                      <span className="font-semibold text-sm truncate">
-                        {category_data.name}
-                      </span>
+            {/* Archive drawer */}
+            {showArchive && archivedCategories.length > 0 && (
+              <div className="absolute top-16 right-4 z-[9999] bg-white rounded-lg shadow-2xl border border-gray-200 p-3 min-w-[220px] max-h-[400px] overflow-y-auto">
+                <h3 className="text-sm font-semibold mb-2 text-gray-500">Archived Categories</h3>
+                {archivedCategories.map((cat) => {
+                  const catIdeas = categoryOrders[cat.id] || [];
+                  return (
+                    <div
+                      key={cat.id}
+                      className="flex justify-between items-center p-2 rounded hover:bg-gray-50 mb-1 border border-gray-100"
+                    >
+                      <div className="flex-1">
+                        <span className="text-sm font-medium">{cat.name}</span>
+                        <span className="text-xs text-gray-400 ml-2">
+                          ({catIdeas.length} ideas)
+                        </span>
+                      </div>
                       <div className="flex items-center gap-1">
-                        <FlipToFrontIcon
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            bring_to_front_category(category_key);
-                          }}
-                          className="hover:text-blue-600! cursor-pointer"
+                        <UnarchiveIcon
+                          onClick={() => toggle_archive_category(cat.id)}
+                          className="hover:text-green-600! cursor-pointer"
                           style={{ fontSize: 18 }}
-                          titleAccess="Bring to front"
+                          titleAccess="Restore"
                         />
                         <DeleteForeverIcon
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            delete_category(category_key);
-                          }}
+                          onClick={() =>
+                            confirm_delete_category(cat.id, cat.name)
+                          }
                           className="hover:text-red-500! cursor-pointer"
                           style={{ fontSize: 18 }}
                         />
                       </div>
                     </div>
-
-                    {/* Ideas inside category (scrollable) */}
-                    <div
-                      ref={(el) =>
-                        (categoryRefs.current[category_key] = el)
-                      }
-                      className="flex-1 overflow-y-auto overflow-x-hidden"
-                      onMouseDown={(e) => e.stopPropagation()}
-                    >
-                      {catIdeas.map((ideaId, arrayIndex) =>
-                        renderIdeaItem(ideaId, arrayIndex, {
-                          type: "category",
-                          id: category_key,
-                        })
-                      )}
-                    </div>
-                  </div>
-                );
-              }
+                  );
+                })}
+              </div>
             )}
 
-            {/* Create Category Button */}
-            <div
-              onClick={() => setDisplayForm(true)}
-              className="absolute top-5 right-5"
-            >
-              <Button
-                text={"Create Category"}
-                handleButtonClick={() => setDisplayForm(false)}
-              />
-            </div>
+            {/* Category Displays (only non-archived) */}
+            {activeCategories.map(([category_key, category_data]) => {
+              const catIdeas = categoryOrders[category_key] || [];
+              const isHovered =
+                dragging &&
+                String(hoverCategory) === String(category_key);
+
+              return (
+                <div
+                  onMouseDown={(e) => {
+                    if (!e.ctrlKey) {
+                      // Only start drag from header — this outer handler
+                      // is needed so clicking the category body selects it
+                      bring_to_front_category(category_key);
+                    }
+                  }}
+                  style={{
+                    left: category_data.x,
+                    top: category_data.y,
+                    width: category_data.width,
+                    height: category_data.height,
+                    zIndex: category_data.z_index || 0,
+                    backgroundColor: isHovered ? "#fde68a" : "#fef08a",
+                    transition: "background-color 150ms ease",
+                  }}
+                  key={category_key}
+                  className="absolute shadow-xl rounded p-2 flex flex-col"
+                >
+                  {/* Category header (drag handle) */}
+                  <div
+                    onMouseDown={(e) => {
+                      if (!e.ctrlKey) {
+                        e.stopPropagation();
+                        handleCategoryDrag(e, category_key);
+                      }
+                    }}
+                    onDoubleClick={(e) => {
+                      e.stopPropagation();
+                      setEditingCategoryId(category_key);
+                      setEditingCategoryName(category_data.name);
+                    }}
+                    className="flex justify-between items-center mb-1 flex-shrink-0 bg-amber-300/50 rounded-t px-1 py-0.5 cursor-grab active:cursor-grabbing border-b border-amber-400/40"
+                  >
+                    {editingCategoryId === category_key ? (
+                      <input
+                        autoFocus
+                        value={editingCategoryName}
+                        onChange={(e) => setEditingCategoryName(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") {
+                            rename_category_api(category_key, editingCategoryName);
+                            setEditingCategoryId(null);
+                          } else if (e.key === "Escape") {
+                            setEditingCategoryId(null);
+                          }
+                        }}
+                        onBlur={() => {
+                          rename_category_api(category_key, editingCategoryName);
+                          setEditingCategoryId(null);
+                        }}
+                        onMouseDown={(e) => e.stopPropagation()}
+                        className="bg-white text-sm font-semibold px-1 py-0.5 rounded outline-none border border-blue-400 flex-1 mr-1"
+                      />
+                    ) : (
+                      <span className="font-semibold text-sm truncate">
+                        {category_data.name}
+                      </span>
+                    )}
+                    <div className="flex items-center gap-1">
+                      <ArchiveIcon
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          toggle_archive_category(category_key);
+                        }}
+                        className="hover:text-amber-700! cursor-pointer"
+                        style={{ fontSize: 16 }}
+                        titleAccess="Archive"
+                      />
+                      <DeleteForeverIcon
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          confirm_delete_category(
+                            category_key,
+                            category_data.name
+                          );
+                        }}
+                        className="hover:text-red-500! cursor-pointer"
+                        style={{ fontSize: 18 }}
+                      />
+                    </div>
+                  </div>
+
+                  {/* Ideas inside category (scrollable) */}
+                  <div
+                    ref={(el) =>
+                      (categoryRefs.current[category_key] = el)
+                    }
+                    className="flex-1 overflow-y-auto overflow-x-hidden"
+                    onMouseDown={(e) => e.stopPropagation()}
+                  >
+                    {catIdeas.map((ideaId, arrayIndex) =>
+                      renderIdeaItem(ideaId, arrayIndex, {
+                        type: "category",
+                        id: category_key,
+                      })
+                    )}
+                  </div>
+                </div>
+              );
+            })}
           </div>
         </div>
       </div>

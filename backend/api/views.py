@@ -161,6 +161,35 @@ def bring_to_front_category(request):
     return Response({"updated": True})
 
 
+@api_view(["POST"])
+def rename_category(request):
+    category_id = request.data.get("id")
+    new_name = request.data.get("name", "").strip()
+    if not new_name:
+        return Response({"error": "Name is required"}, status=400)
+    Category.objects.filter(id=category_id).update(name=new_name)
+    return Response({"updated": True})
+
+
+@api_view(["POST"])
+def update_idea_title(request):
+    idea_id = request.data.get("id")
+    new_title = request.data.get("title", "").strip()
+    if not new_title:
+        return Response({"error": "Title is required"}, status=400)
+    Idea.objects.filter(id=idea_id).update(title=new_title)
+    return Response({"updated": True})
+
+
+@api_view(["POST"])
+def toggle_archive_category(request):
+    category_id = request.data.get("id")
+    category = Category.objects.get(id=category_id)
+    category.archived = not category.archived
+    category.save()
+    return Response({"archived": category.archived})
+
+
 
 
 

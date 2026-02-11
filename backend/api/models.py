@@ -70,6 +70,7 @@ class Category(models.Model):
     width = models.IntegerField(default=100)
     height = models.IntegerField(default=100)
     z_index = models.IntegerField(default=0)
+    archived = models.BooleanField(default=False)
 
 
 
