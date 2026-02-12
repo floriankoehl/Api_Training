@@ -4,8 +4,12 @@ import {fetch_project_teams,
         fetch_project_tasks }from "./api";
 
 
+const TASKHEIGHT = 30
+const TASKWIDTH = 200
 
 const TEAMHEIGHT = 50
+const TEAMWIDTH = 150
+
 const TEAM_DRAG_HIGHLIGHT_HEIGHT = 5
 const MARIGN_BETWEEN_DRAG_HIGHLIGHT = 5
 const ROW = TEAMHEIGHT + MARIGN_BETWEEN_DRAG_HIGHLIGHT + 2 * MARIGN_BETWEEN_DRAG_HIGHLIGHT
@@ -20,6 +24,12 @@ export default function DependencyView(){
 
     const [tasks, setTasks] = useState({})
 
+    const [height, setHeight] = useState(0)
+
+    useEffect(() => {
+        if (!teamContainerRef.current) return
+        setHeight(teamContainerRef.current.getBoundingClientRect().height)
+    }, [])
 
 
 
@@ -79,6 +89,8 @@ export default function DependencyView(){
         for (const team_id in teamObject) {
             teamObject[team_id].tasks =
                 resTasks.taskOrder?.[String(team_id)] || []
+            
+            teamObject[team_id].height = resTasks.taskOrder?.[String(team_id)].length * TASKHEIGHT
         }
 
         console.log(teamObject)
@@ -133,8 +145,22 @@ export default function DependencyView(){
 
             const relativeY = e.clientY - parent_rect.top
 
-            let index = Math.floor((relativeY + TEAMHEIGHT/2) / ROW)
-            if (index == order_index +1) {
+            // Determine drop index by comparing mouse Y to each team's midpoint.
+            // Use only the team container nodes (ignore the trailing drop-highlighter child).
+            const teamNodes = children.slice(0, teamOrder.length)
+            let index = teamNodes.length // default: drop at end
+            for (let i = 0; i < teamNodes.length; i++) {
+                const childRect = teamNodes[i].getBoundingClientRect()
+                const childTop = childRect.top - parent_rect.top
+                const childMid = childTop + childRect.height / 2
+                if (relativeY < childMid) {
+                    index = i
+                    break
+                }
+            }
+
+            // If hovering just after the original item, treat it as the same gap
+            if (index === order_index + 1) {
                 index = order_index
             }
 
@@ -142,7 +168,7 @@ export default function DependencyView(){
             to_index = clamped
             setDropIndex(clamped)
 
-
+            // for (let element of )
 
 
 
@@ -234,57 +260,91 @@ export default function DependencyView(){
 
     return (
         <>
-            <div className="h-screen w-screen p-10">
+            <div className="h-screen w-screen p-10 flex">
+
+
+                {/* ____________ Team Container ______________ */}
+                {/* ____________ Team Container ______________ */}
+                {/* ____________ Team Container ______________ */}
+                {/* ____________ Team Container ______________ */}
+                {/* ____________ Team Container ______________ */}
+                {/* ____________ Team Container ______________ */}
+                {/* ____________ Team Container ______________ */}
                 <div 
                 ref={teamContainerRef}
-                className="h-full w-full bg-white shadow-xl border border-gray-200 relative select-none">
+                style={{
+                    width: `${TEAMWIDTH + TASKWIDTH}px`,
+                    
+                }}
+                className="h-full w-full bg-white shadow-xl relative select-none">
                     
 
                     {/* Teams List */}
                     {teamOrder.map((team_key, index)=>{
                         const team = teams[team_key]
                         return (
-                            <div 
-                            
-                            key={`${team_key}_container`}>
-                                {/* Redrag Highlighter */}
-                                
-                                <div 
-                                style={{
-                                    marginBottom: `${MARIGN_BETWEEN_DRAG_HIGHLIGHT}px`,
-                                    marginTop: `${MARIGN_BETWEEN_DRAG_HIGHLIGHT}px`,
-                                    height:  `${TEAM_DRAG_HIGHLIGHT_HEIGHT}px`,
-                                    opacity: dropIndex === index ? 1 : 0
+                          <div key={`${team_key}_container`}>
+                            {/* Redrag Highlighter */}
+
+                            <div
+                              style={{
+                                marginBottom: `${MARIGN_BETWEEN_DRAG_HIGHLIGHT}px`,
+                                marginTop: `${MARIGN_BETWEEN_DRAG_HIGHLIGHT}px`,
+                                height: `${TEAM_DRAG_HIGHLIGHT_HEIGHT}px`,
+                                opacity: dropIndex === index ? 1 : 0,
+                              }}
+                              className="bg-black rounded-l-full"
+                            ></div>
+
+                            {/* Team */}
+                            <div
+                              onMouseDown={(e) => {
+                                handleTeamDrag(e, team_key, index);
+                              }}
+                              style={{
+                                height: team.height,
+                                backgroundColor: `${team.color}`,
+                                opacity: ghost?.id === team_key ? 0.2 : 1,
+                              }}
+                              className="w-full bg-gray-200 flex border"
+                            >
+                              
+
+
+
+                                    <div
+                                    style={{
+                                        width: `${TEAMWIDTH}px`
+                                    }}
+                                    // className="w-30"
+                                    >
+                                        {teams[team_key].name}
+                                    </div>
+
+
+                                    <div>
+                                        {team.tasks.map((task_key, index) => {
+                                        return (
+                                        <div 
+                                        className="border-b border-l"
+                                        style={{
+                                            height: `${TASKHEIGHT}px`,
+                                            width: `${TASKWIDTH}px`,
+                                            borderBottom: team.tasks.length-1 === index ? "none" : "1px solid black"
+
+                                        }}
+                                        key={`${task_key}_container`}>
+                                            {tasks[task_key].name}
+                                        </div>
+                                        );
+                                        })}
+                                    </div>
                                     
-                                }}
-                                className="bg-black rounded-full"></div>
-                                
-
-
-
-
-
-
-                                {/* Team */}
-                                <div
-                                onMouseDown={(e)=>{handleTeamDrag(e, team_key, index)}}
-                                style={{
-                                    height: team.height,
-                                    backgroundColor: `${team.color}`,
-                                    opacity: ghost?.id === team_key ? 0.2 : 1
-                                }}
-                                className="w-full bg-gray-200"
-                                >{teams[team_key].name}</div>
-
-                                
-                                
-                                
                             </div>
-                        )
+                          </div>
+                        );
                         
                     })}
-
-
 
 
                     {/* LAST DROP HIGHLIGHT */}
@@ -297,17 +357,14 @@ export default function DependencyView(){
 
                             
                         }}
-                        className="bg-black rounded-full"></div>
-
-
-
+                        className="bg-black rounded-l-full"></div>
 
                     {/* Ghost */}
                     {ghost && <div 
                     className="bg-blue-200 absolute"
                     style={{
                         height: `${ghost.height}px`,
-                        width: `100px`,
+                        width: `${TEAMWIDTH + TASKWIDTH}px`,
                         left: `${ghost.x}px`,
                         top: `${ghost.y}px`,
                         backgroundColor: `${ghost.color}`
@@ -317,6 +374,68 @@ export default function DependencyView(){
                     </div>}
                     
 
+                </div>
+
+
+
+
+                {/* ____________ Milestones Container ______________ */}
+                <div
+                style={{
+                    // width: `${10000}px`,
+                    height: `${height}px`
+                }}
+                className=" select-none overflow-x-auto"
+                >
+                    <div 
+                    style={{
+                        width: `10000px`
+                    }}
+                    >
+                        {teamOrder.map((team_key, index)=>{
+                        const team = teams[team_key]
+                        return (
+                          <div 
+                          key={`${team_key}_container`}>
+                            
+                            
+                            
+                            {/* Redrag Highlighter */}
+                            <div
+                              style={{
+                                marginBottom: `${MARIGN_BETWEEN_DRAG_HIGHLIGHT}px`,
+                                marginTop: `${MARIGN_BETWEEN_DRAG_HIGHLIGHT}px`,
+                                height: `${TEAM_DRAG_HIGHLIGHT_HEIGHT}px`,
+                                opacity: dropIndex === index ? 1 : 0,
+                              }}
+                              className="bg-black rounded-r-full"
+                            ></div>
+
+
+                                <div className="border-t border-b"
+                                style={{ height: `${team.height}px` }}>
+
+                                {team.tasks.map((task_key, index) => {
+                                    
+                                    return (
+                                        <div 
+                                        style={{
+                                            height: `${TASKHEIGHT}px`,
+                                            borderBottom: team.tasks.length - 1 === index ? "none" : "1px solid black"
+                                            
+                                        }}
+                                        key={`${task_key}_container`}>
+                                </div>
+                                );
+                            })}
+                            </div>
+
+                          </div>
+                        );
+                        
+                    })}
+
+                    </div>
                 </div>
             </div>
         </>
