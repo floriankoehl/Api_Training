@@ -100,6 +100,71 @@ class Idea(models.Model):
 
 
 
+class Project(models.Model):
+    name = models.CharField(max_length=200)
+    start_date = models.DateField()
+    end_date = models.DateField()
+
+
+class Team(models.Model):
+    name = models.CharField(max_length = 200)
+    project = models.ForeignKey(Project, on_delete=models.CASCADE, null=False)
+    color = models.CharField(max_length = 30)
+    order_index = models.IntegerField(default=0)
+
+    class Meta: 
+        ordering = ["project", "order_index"]
+    
+
+class Task(models.Model):
+    name = models.CharField(max_length=200)
+    project = models.ForeignKey(Project, on_delete=models.CASCADE, null=False)
+    team = models.ForeignKey(Team, on_delete=models.SET_NULL, null=True)
+    order_index = models.IntegerField(default=0)
+
+    class Meta: 
+        ordering = ["team", "order_index"]
+
+
+class Milestone(models.Model):
+    name = models.CharField(max_length=200)
+    task = models.ForeignKey(Task, on_delete=models.CASCADE, null=False)
+    scheduled_index = models.IntegerField(default=0)
+
+
+class Dependency(models.Model):
+    source = models.ForeignKey(Milestone, on_delete=models.CASCADE, 
+                               related_name="outgoing_dependencies")
+    target = models.ForeignKey(Milestone, on_delete=models.CASCADE,
+                               related_name="incoming_dependencies")
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 

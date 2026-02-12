@@ -210,3 +210,45 @@ def toggle_archive_category(request):
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+class TeamSerializer(serializers.ModelSerializer):
+    class Meta: 
+        model = Team
+        fields = "__all__"
+
+
+
+
+@api_view(["GET"])
+def fetch_project_teams(request):
+    project = Project.objects.first()
+    all_teams = Team.objects.filter(project=project.id)
+    serialized_teams = TeamSerializer(all_teams, many=True)
+
+
+    return Response({"teams": serialized_teams.data})
+
+
+
+
+
+

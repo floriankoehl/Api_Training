@@ -30,4 +30,18 @@ urlpatterns = [
     path("rename_category/", rename_category),
     path("update_idea_title/", update_idea_title),
     path("toggle_archive_category/", toggle_archive_category),
+
+
+
+
+
+
+
+
+
+
+
+
+
+    path("fetch_project_teams/", fetch_project_teams)
 ]
