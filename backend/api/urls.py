@@ -42,6 +42,11 @@ urlpatterns = [
 
 
 
+    # Teams
+    path("fetch_project_teams/", fetch_project_teams),
+    path("safe_team_order/", safe_team_order),
 
-    path("fetch_project_teams/", fetch_project_teams)
+    # Tasks
+    path("fetch_project_tasks/", fetch_project_tasks),
+    
 ]

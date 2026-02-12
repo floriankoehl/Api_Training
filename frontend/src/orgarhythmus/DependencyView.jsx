@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from "react"
-import fetch_project_teams from "./api";
+import {fetch_project_teams,
+        safe_team_order,
+        fetch_project_tasks }from "./api";
 
 
 
@@ -16,33 +18,78 @@ export default function DependencyView(){
     const teamContainerRef = useRef(null)
     const [dropIndex, setDropIndex] = useState(null)
 
+    const [tasks, setTasks] = useState({})
 
 
+
+
+    // ________________TEAMS___________________
+    // ________________________________________
+    // ________________________________________
+    // ________________________________________
+    // ________________________________________
     // Fetch all teams
-    useEffect(() => {
-        const fetch_teams = async () => {
-            const res = await fetch_project_teams()
-            console.log("real data:", res.teams)
-            const fetched_teams = res.teams
+    // useEffect(() => {
+    //     const fetch_teams = async () => {
+    //         const res = await fetch_project_teams()
+    //         const fetched_teams = res.teams
 
-            const fetchedTeamOrder = []
-            const fetchedTeamObject = {}
-            for (let i = 0; i < fetched_teams.length; i ++) {
-                const team = fetched_teams[i]
+    //         const fetchedTeamOrder = []
+    //         const fetchedTeamObject = {}
+    //         for (let i = 0; i < fetched_teams.length; i ++) {
+    //             const team = fetched_teams[i]
 
                 
-                fetchedTeamOrder.push(team.id)
-                fetchedTeamObject[team.id] = {
-                    ...team,
-                    height: TEAMHEIGHT
-                }
+    //             fetchedTeamOrder.push(team.id)
+    //             fetchedTeamObject[team.id] = {
+    //                 ...team,
+    //                 height: TEAMHEIGHT,
+    //                 tasks: []
+    //             }
+    //         }
+    //         setTeamOrder(fetchedTeamOrder)
+    //         setTeams(fetchedTeamObject)
+    //     }
+    //     fetch_teams()
+    // }, [])
+
+    useEffect(() => {
+    const load_all = async () => {
+
+        // 1️⃣ fetch teams
+        const resTeams = await fetch_project_teams()
+        const fetched_teams = resTeams.teams
+
+        const teamOrder = []
+        const teamObject = {}
+
+        for (const team of fetched_teams) {
+            teamOrder.push(team.id)
+            teamObject[team.id] = {
+                ...team,
+                height: TEAMHEIGHT,
+                tasks: []
             }
-            console.log(fetchedTeamOrder)
-            setTeamOrder(fetchedTeamOrder)
-            setTeams(fetchedTeamObject)
         }
-        fetch_teams()
-    }, [])
+
+        // 2️⃣ fetch tasks AFTER teams exist
+        const resTasks = await fetch_project_tasks()
+        console.log("RES TASKS", resTasks)
+
+        for (const team_id in teamObject) {
+            teamObject[team_id].tasks =
+                resTasks.taskOrder?.[String(team_id)] || []
+        }
+
+        console.log(teamObject)
+        // 3️⃣ commit state once
+        setTeamOrder(teamOrder)
+        setTeams(teamObject)
+        setTasks(resTasks.tasks)
+    }
+
+    load_all()
+}, [])
 
 
 
@@ -51,19 +98,22 @@ export default function DependencyView(){
 
 
 
+
+
+
+    const safe_team_order_local = async (new_order) => {
+        const res = await safe_team_order(new_order)
+    }
 
     const handleTeamDrag = (event, team_key, order_index) => {
         const team = teams[team_key]
         const from_index = order_index
         let to_index =order_index
-        console.log("correctly in here", team)
 
         const parent = teamContainerRef.current
         const parent_rect = parent.getBoundingClientRect()
-        console.log("parent_rect", parent_rect)
 
         const children = [...parent.children]
-        console.log("CHILDS", children)
 
         const startX = event.clientX - parent_rect.x
         const startY = event.clientY - parent_rect.y
@@ -119,6 +169,7 @@ export default function DependencyView(){
             copy.splice(targetIndex, 0, moved)
             setTeamOrder(copy)
 
+            safe_team_order_local(copy)
 
 
 
@@ -136,9 +187,40 @@ export default function DependencyView(){
 
 
 
+    // ________________TASKS___________________
+    // ________________________________________
+    // ________________________________________
+    // ________________________________________
+    // ________________________________________
 
 
+    // useEffect(()=>{
+    //     if (Object.keys(teams).length === 0) return
 
+    //     const fetch_all_tasks = async () => {
+    //         const response = await fetch_project_tasks()
+    //         const all_tasks = response.tasks
+    //         setTasks(all_tasks)
+
+    //         const task_orders = response.task_orders
+            
+    //         setTeams((prev_teams)=>{
+    //             const updated_teams = {}
+    //             for (let team_key in prev_teams) {
+    //                 const team = prev_teams[team_key]
+    //                 // console.log("These are the teams", team_key, team.name)
+    //                 updated_teams[team_key] = {
+    //                     ...team, 
+    //                     tasks: task_orders?.[String(team_key)] || []
+    //                 }
+    //             }
+
+    //             console.log("UPDATED TEAMS: ", updated_teams)
+    //             return updated_teams
+    //         })
+    //     }
+    //     fetch_all_tasks()
+    // },[teams])
 
 
 
@@ -160,7 +242,6 @@ export default function DependencyView(){
 
                     {/* Teams List */}
                     {teamOrder.map((team_key, index)=>{
-                        // console.log("INDEX??? ", index, teams[team_key].name)
                         const team = teams[team_key]
                         return (
                             <div 

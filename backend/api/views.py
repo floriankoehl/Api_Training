@@ -249,6 +249,72 @@ def fetch_project_teams(request):
 
 
 
+from rest_framework import status
+from django.db import transaction
+
+@api_view(["PATCH"])
+def safe_team_order(request):
+    order = request.data.get("order")
+
+    if not isinstance(order, list):
+        return Response({"error": "order must be a list"}, status=status.HTTP_400_BAD_REQUEST)
+
+    with transaction.atomic():
+        for index, team_id in enumerate(order):
+            Team.objects.filter(id=team_id).update(order_index=index)
+
+    return Response({"status": "ok"})
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+class TaskSerializer(serializers.ModelSerializer):
+    class Meta: 
+        model = Task
+        fields = "__all__"
+
+
+@api_view(["GET"])
+def fetch_project_tasks(request):
+    project = Project.objects.first()
+    all_tasks = Task.objects.filter(project=project).order_by("team_id", "order_index")
+
+    serialized = TaskSerializer(all_tasks, many=True).data
+
+    # tasks by id
+    tasks_by_id = {}
+    for task in serialized:
+        tasks_by_id[task["id"]] = task
+
+    # order per team
+    order_per_team = {}
+    for task in serialized:
+        team_id = task["team"]
+
+        if team_id not in order_per_team:
+            order_per_team[team_id] = []
+
+        order_per_team[team_id].append(task["id"])
+
+    return Response({
+        "health": "healthy",
+        "tasks": tasks_by_id,
+        "taskOrder": order_per_team
+    })
+
+
+
 
 
 
