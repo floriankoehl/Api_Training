@@ -19,7 +19,7 @@ class Command(BaseCommand):
 
         # Create sample project
         start_date = timezone.now().date()
-        end_date = start_date + timedelta(days=90)
+        end_date = start_date + timedelta(days=40)
 
         project = Project.objects.create(
             name="Sample Project Alpha",

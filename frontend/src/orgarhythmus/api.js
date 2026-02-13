@@ -2,8 +2,10 @@
 
 const API = "http://127.0.0.1:8000/api"
 
-export async function fetch_project_teams(){
-    const res = await fetch(`${API}/fetch_project_teams/`)
+
+
+export async function fetch_project_details(){
+    const res = await fetch(`${API}/get_project_details/`)
     const answer = await res.json()
     return answer
 }
@@ -11,7 +13,11 @@ export async function fetch_project_teams(){
 
 
 
-
+export async function fetch_project_teams(){
+    const res = await fetch(`${API}/fetch_project_teams/`)
+    const answer = await res.json()
+    return answer
+}
 
 export async function safe_team_order( new_order ){
     const res = await fetch(`${API}/safe_team_order/`, {
@@ -27,16 +33,19 @@ export async function safe_team_order( new_order ){
     return answer
 }
 
-
-
-
-
-
-
-
-
 export async function fetch_project_tasks(){
     const res = await fetch(`${API}/fetch_project_tasks/`)
+    const answer = await res.json()
+    return answer
+}
+
+
+
+// Milestones 
+
+
+export async function get_all_milestones(){
+    const res = await fetch(`${API}/get_all_milestones/`)
     const answer = await res.json()
     return answer
 }
@@ -46,6 +55,38 @@ export async function fetch_project_tasks(){
 
 
 
+
+export async function add_milestone(task_id) {
+    const res = await fetch(`${API}/add_milestone/`, {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json"
+        }, 
+        body: JSON.stringify({
+
+            task_id: task_id
+        })
+    })
+    const answer = await res.json()
+    return answer
+}
+
+
+
+export async function update_start_index(milestone_id, index) {
+    const res = await fetch(`${API}/update_start_index/`, {
+        method: "PATCH",
+        headers: {
+            "Content-Type": "application/json"
+        }, 
+        body: JSON.stringify({
+            milestone_id: milestone_id,
+            index: index
+        })
+    })
+    const answer = await res.json()
+    return answer
+}
 
 
 

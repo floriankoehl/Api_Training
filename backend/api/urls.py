@@ -39,7 +39,8 @@ urlpatterns = [
 
 
 
-
+    # Project
+    path("get_project_details/", get_project_details),
 
 
     # Teams
@@ -48,5 +49,10 @@ urlpatterns = [
 
     # Tasks
     path("fetch_project_tasks/", fetch_project_tasks),
+    
+    # Milestones
+    path("get_all_milestones/", get_all_milestones),
+    path("add_milestone/", add_milestone),
+    path("update_start_index/", update_start_index)
     
 ]

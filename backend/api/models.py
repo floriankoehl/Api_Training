@@ -126,10 +126,21 @@ class Task(models.Model):
         ordering = ["team", "order_index"]
 
 
+# class Milestone(models.Model):
+#     name = models.CharField(max_length=200)
+#     project = models.ForeignKey(Project, on_delete=models.CASCADE, null=False)
+#     task = models.ForeignKey(Task, on_delete=models.CASCADE, null=False, )
+#     start_index = models.IntegerField(default=0)
+#     end_index = models.IntegerField(default=0)
+
+
 class Milestone(models.Model):
     name = models.CharField(max_length=200)
-    task = models.ForeignKey(Task, on_delete=models.CASCADE, null=False)
-    scheduled_index = models.IntegerField(default=0)
+    project = models.ForeignKey(Project, on_delete=models.CASCADE, null=False)
+    task = models.ForeignKey(Task, on_delete=models.CASCADE, null=False, related_name="milestones")
+    start_index = models.IntegerField(default=0)
+    end_index = models.IntegerField(default=0)
+
 
 
 class Dependency(models.Model):

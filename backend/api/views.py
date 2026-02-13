@@ -214,12 +214,19 @@ def toggle_archive_category(request):
 
 
 
+class ProjectSerializer(serializers.ModelSerializer):
+    class Meta: 
+        model = Project
+        fields = "__all__"
 
 
 
-
-
-
+@api_view(["GET"])
+def get_project_details(request):
+    print("Correctly inside project details")
+    project = Project.objects.first()
+    serialized = ProjectSerializer(project).data
+    return Response({"project": serialized})
 
 
 
@@ -272,7 +279,10 @@ def safe_team_order(request):
 
 
 
-
+class MilestoneSerializer(serializers.ModelSerializer):
+    class Meta: 
+        model = Milestone
+        fields = "__all__"
 
 
 
@@ -280,15 +290,24 @@ def safe_team_order(request):
 
 
 class TaskSerializer(serializers.ModelSerializer):
-    class Meta: 
+    milestones = MilestoneSerializer(many=True, read_only=True)
+
+    class Meta:
         model = Task
         fields = "__all__"
+
 
 
 @api_view(["GET"])
 def fetch_project_tasks(request):
     project = Project.objects.first()
-    all_tasks = Task.objects.filter(project=project).order_by("team_id", "order_index")
+    all_tasks = (
+        Task.objects
+        .filter(project=project)
+        .prefetch_related("milestones")  
+        .order_by("team_id", "order_index")
+    )
+
 
     serialized = TaskSerializer(all_tasks, many=True).data
 
@@ -316,5 +335,79 @@ def fetch_project_tasks(request):
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# Milestones
+
+
+
+
+
+# name = models.CharField(max_length=200)
+# project = models.ForeignKey(Project, on_delete=models.CASCADE, null=False)
+# task = models.ForeignKey(Task, on_delete=models.CASCADE, null=False)
+# start_index = models.IntegerField(default=0)
+# end_index = models.IntegerField(default=0)
+
+
+
+@api_view(["GET"])
+def get_all_milestones(request):
+    project_id = Project.objects.first().id
+    all_milestones = Milestone.objects.filter(project = project_id)
+    if all_milestones:
+        serialized = MilestoneSerializer(all_milestones, many=True)
+        return Response({"milestones": serialized.data})
+    else: 
+        return Response({"milestones": "no milestones yet"})
+
+
+@api_view(["POST"])
+def add_milestone(request):
+    task_id = request.data.get("task_id")
+    project = Project.objects.first()
+    project_id = project.id
+    task = Task.objects.get(id=int(task_id))
+    name = f"{task.name}_0"
+    start_index = 0
+    end_index = 0
+    milestone, created = Milestone.objects.get_or_create(
+        project = project,
+        name = name,
+        task = task,
+        start_index = start_index,
+        end_index = end_index
+    )
+
+    serialized = MilestoneSerializer(milestone)
+
+    return Response({"added_milestone":serialized.data, "created": created})
+
+
+
+
+
+
+@api_view(["PATCH"])
+def update_start_index(request):
+    new_index = request.data.get("index")
+    milestone_id = request.data.get("milestone_id")
+    milestone = Milestone.objects.get(id=milestone_id)
+    milestone.start_index = new_index
+    milestone.save()
+    return Response({"updated": "true"})
 
 
