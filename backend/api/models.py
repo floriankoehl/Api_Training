@@ -139,7 +139,7 @@ class Milestone(models.Model):
     project = models.ForeignKey(Project, on_delete=models.CASCADE, null=False)
     task = models.ForeignKey(Task, on_delete=models.CASCADE, null=False, related_name="milestones")
     start_index = models.IntegerField(default=0)
-    end_index = models.IntegerField(default=0)
+    duration = models.IntegerField(default=1)
 
 
 

@@ -383,13 +383,13 @@ def add_milestone(request):
     task = Task.objects.get(id=int(task_id))
     name = f"{task.name}_0"
     start_index = 0
-    end_index = 0
+    duration = 1
     milestone, created = Milestone.objects.get_or_create(
         project = project,
         name = name,
         task = task,
         start_index = start_index,
-        end_index = end_index
+        duration = duration
     )
 
     serialized = MilestoneSerializer(milestone)
@@ -409,5 +409,43 @@ def update_start_index(request):
     milestone.start_index = new_index
     milestone.save()
     return Response({"updated": "true"})
+
+
+
+
+
+
+@api_view(["DELETE"])
+def delete_milestones(request):
+    milestone_id = request.data.get("id")
+    milestone = Milestone.objects.get(id=milestone_id)
+    milestone.delete()
+    return Response({"deleted": True}, status=204)
+
+
+
+
+
+
+@api_view(["PATCH"])
+def change_duration(request):
+    milestone_id = request.data.get("id")
+    milestone = Milestone.objects.get(id=milestone_id)
+    change = request.data.get("change")
+    duration = milestone.duration + change
+
+    if duration < 1: 
+        duration = 1
+
+    data = {
+        "duration": duration
+    }
+    serializer = MilestoneSerializer(milestone, data=data, partial=True)
+    if serializer.is_valid():
+        serializer.save()
+        return Response({"succesfull": True, "data": serializer.data}, status=200)
+
+
+
 
 

@@ -90,5 +90,54 @@ export async function update_start_index(milestone_id, index) {
 
 
 
+export async function delete_milestone(milestone_id){
+    const res = await fetch(`${API}/delete_milestones/`, {
+        method: "DELETE",
+        headers: {
+            "Content-Type": "application/json"
+        }, 
+        body: JSON.stringify({
+            id: milestone_id
+        })
+    })
+
+    if (!res.ok) {
+        const text = await res.text()   // backend might not send JSON on errors
+        throw new Error(`Delete failed (${res.status}): ${text}`)
+    }
+
+    if (res.status === 204) return null
+
+    return await res.json()
+}
 
 
+
+
+
+
+export async function change_duration(milestone_id, duration_change){
+    const res = await fetch(`${API}/change_duration/`, {
+        method: "PATCH",
+        headers: {
+            "Content-Type": "application/json"
+        }, 
+        body: JSON.stringify({
+            id: milestone_id,
+            change: duration_change
+        })
+    })
+
+    if (!res.ok) {
+        const text = await res.text()   // backend might not send JSON on errors
+        throw new Error(`UPDATE failed (${res.status}): ${text}`)
+    }
+
+     // if backend returns JSON (normal PATCH case)
+    if (res.status === 200) {
+        return await res.json()
+    }
+
+    // if you later switch to 204 No Content
+    return null
+}

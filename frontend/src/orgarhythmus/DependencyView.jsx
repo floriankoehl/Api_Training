@@ -1,5 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import AddIcon from '@mui/icons-material/Add';
+import DeleteForeverIcon  from '@mui/icons-material/DeleteForever';
+import AddCircleOutlineIcon from '@mui/icons-material/AddCircleOutline';
+import RemoveCircleOutlineIcon from '@mui/icons-material/RemoveCircleOutline';
 import {
   fetch_project_teams,
   safe_team_order,
@@ -7,7 +10,9 @@ import {
   fetch_project_details,
   get_all_milestones,
   add_milestone,
-  update_start_index
+  update_start_index,
+  delete_milestone,
+  change_duration
 } from "./api";
 
 
@@ -57,7 +62,7 @@ export default function DependencyView() {
   
   const [days, setDays] = useState(null)
   const [milestones, setMilestones] = useState({})
-
+  const [hoveredMilestone, setHoveredMilestone] = useState(null)
 
 
 
@@ -71,6 +76,49 @@ export default function DependencyView() {
   const [tasks, setTasks] = useState({});
 
   const [reloadData, setReloadData] = useState(false)
+
+
+
+
+
+
+
+
+
+
+  // ________Global Event Listener___________
+  // ________________________________________
+  // ________________________________________
+  // ________________________________________
+  // ________________________________________
+
+  
+const [mode, setMode] = useState("drag")
+
+useEffect(() => {
+  const down = (e) => {
+    if (e.ctrlKey) setMode("delete")
+    else if (e.shiftKey) setMode("duration")
+    
+  }
+
+  const up = () => setMode("drag")
+
+  window.addEventListener("keydown", down)
+  window.addEventListener("keyup", up)
+  return () => {
+    window.removeEventListener("keydown", down)
+    window.removeEventListener("keyup", up)
+  }
+}, [])
+
+
+
+
+
+
+
+
 
 
 
@@ -153,10 +201,10 @@ export default function DependencyView() {
         const milestone = fetched_Milestones[i]
         updated_milestones[milestone.id] = {
           ...milestone, 
-          x: milestone.start_index* DAYWIDTH 
+          x: milestone.start_index* DAYWIDTH,
+          display: "default"
         }
       }
-      console.log("UPDATED MILESTONES: ", updated_milestones)
 
 
 
@@ -296,10 +344,18 @@ export default function DependencyView() {
   
 
 const handleMileStoneDrag = (event, milestone_key) => {
+  event.preventDefault() 
+
   const startX = event.clientX - milestones[milestone_key].x
   let new_x = milestones[milestone_key].x
 
   const onMouseMove = (e) => {
+    // If Ctrl is pressed, stop dragging and snap to position
+    if (e.ctrlKey) {
+      onMouseUp()
+      return 
+    }
+
     new_x = e.clientX - startX
 
 
@@ -316,11 +372,6 @@ const handleMileStoneDrag = (event, milestone_key) => {
 
 
 
-
-
-
-
-
     setMilestones(prev => ({
       ...prev,
       [milestone_key]: {
@@ -331,8 +382,9 @@ const handleMileStoneDrag = (event, milestone_key) => {
   }
 
   const onMouseUp = () => {
-    const snapped_x = Math.round(new_x / DAYWIDTH) * DAYWIDTH
-    const new_index = snapped_x / DAYWIDTH
+    const new_index = Math.round(new_x / DAYWIDTH)
+    const snapped_x = new_index * DAYWIDTH
+
 
     setMilestones(prev => ({
       ...prev,
@@ -358,7 +410,22 @@ const handleMileStoneDrag = (event, milestone_key) => {
 
 
 
+  const handleMileStoneMouseDown = (e, id) => {
+    if (mode === "drag") {
+      return handleMileStoneDrag(e, id)
+    }
+    else if (mode === "delete") {
+      setReloadData(true)
+      return delete_milestone(id)
+    }
+    // In duration mode, don't do anything here - icons have their own handlers
+  }
 
+  const handleDurationChange = (e, id, amount) => {
+    e.stopPropagation() // Prevent parent mousedown from firing
+    setReloadData(true)
+    change_duration(id, amount)
+  }
 
 
 
@@ -387,6 +454,7 @@ const handleMileStoneDrag = (event, milestone_key) => {
           }}
           className="relative"
         >
+          {mode}
           {/* Teams List */}
           {teamOrder.map((team_key, index) => {
             const team = teams[team_key];
@@ -506,21 +574,70 @@ const handleMileStoneDrag = (event, milestone_key) => {
                           {/* Milestone Rendering */}
                           {tasks[task_key].milestones.map((milestone_from_task)=>{
                             const milestone = milestones[milestone_from_task.id]
+                            const showDelete = hoveredMilestone === milestone.id && mode === "delete"
+                            const showDurationPlus = hoveredMilestone === milestone.id && mode === "duration"
+                            const showDurationMinus = hoveredMilestone === milestone.id && mode === "duration" && milestone.duration > 1
+                            
+
 
                             return (
                                <div
-                                  onMouseDown={(e)=>{handleMileStoneDrag(e, milestone_from_task.id)}}
+                                  onMouseDown={(e)=>{
+                                    // handleMileStoneDrag(e, milestone_from_task.id)
+                                    handleMileStoneMouseDown(e, milestone_from_task.id)
+                                  }}
+
+                                  onMouseEnter={() => setHoveredMilestone(milestone.id)}
+                                  onMouseLeave={() => setHoveredMilestone(null)}
+
+
+
                                   className=" absolute p-1"
                                   style={{
                                       height: `${TASKHEIGHT}px`,
-                                      width: `${DAYWIDTH}px`,
+                                      width: `${DAYWIDTH * milestone.duration}px`,
                                       left: `${milestone.x}px`,
                                       opacity: ghost?.id === team_key ? 0.2 : 1,
                                   }}
                                   key={milestone.id}>
                                     <div className="h-full w-full rounded bg-black text-white flex justify-center items-center">
-                                        X
+                                    {!showDelete && !showDurationPlus && !showDurationMinus && "X"}
+
+                                    {showDelete && (
+                                      <DeleteForeverIcon
+                                        style={{ color: "#fa2020" }}
+                                        className="animate-pulse"
+                                      />
+                                    )}
+
+                                    <div 
+                                    style={{
+                                      display: showDurationMinus || showDurationPlus ? "flex" : "none"
+                                    }}
+                                    className="w-full flex justify-between px-1">
+                                      {showDurationPlus && (
+                                      <AddCircleOutlineIcon
+                                        onClick={(e) => handleDurationChange(e, milestone.id, 1)}
+                                        style={{}}
+                                        className="cursor-pointer ml-1"
+                                      />
+                                    )}
+
+
+                                      {showDurationMinus && (
+                                      <RemoveCircleOutlineIcon
+                                        onClick={(e) => handleDurationChange(e, milestone.id, -1)}
+                                        style={{}}
+                                        className="hover:text-blue-200 cursor-pointer"
+                                      />
+                                    )}
+
+                                    
                                     </div>
+                                    
+                                    
+                                  </div>
+
                                 
                                 </div>
                             )

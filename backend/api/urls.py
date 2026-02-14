@@ -53,6 +53,8 @@ urlpatterns = [
     # Milestones
     path("get_all_milestones/", get_all_milestones),
     path("add_milestone/", add_milestone),
-    path("update_start_index/", update_start_index)
+    path("update_start_index/", update_start_index),
+    path("delete_milestones/", delete_milestones),
+    path("change_duration/", change_duration)
     
 ]
