@@ -33,6 +33,8 @@ const ROW =
 
 const DAYWIDTH = TASKHEIGHT
 
+// Connection constants
+const CONNECTION_RADIUS = 20;
 
 
 
@@ -77,7 +79,12 @@ export default function DependencyView() {
 
   const [reloadData, setReloadData] = useState(false)
 
-
+  // Connection state
+  const [isDraggingConnection, setIsDraggingConnection] = useState(false);
+  const [connectionStart, setConnectionStart] = useState(null);
+  const [connectionEnd, setConnectionEnd] = useState({ x: 0, y: 0 });
+  const [connections, setConnections] = useState([]); // Array of {source: id, target: id}
+  const [selectedConnection, setSelectedConnection] = useState(null); // {source: id, target: id}
 
 
 
@@ -99,7 +106,7 @@ useEffect(() => {
   const down = (e) => {
     if (e.ctrlKey) setMode("delete")
     else if (e.shiftKey) setMode("duration")
-    
+    else if (e.altKey) setMode("connect")
   }
 
   const up = () => setMode("drag")
@@ -258,8 +265,8 @@ useEffect(() => {
       const relativeY = e.clientY - parent_rect.top;
 
       // Determine drop index by comparing mouse Y to each team's midpoint.
-      // Use only the team container nodes (ignore the trailing drop-highlighter child).
-      const teamNodes = children.slice(0, teamOrder.length);
+      // Use only the team container nodes (skip SVG at index 0, ignore trailing elements).
+      const teamNodes = children.slice(1, teamOrder.length + 1);
       let index = teamNodes.length; // default: drop at end
       for (let i = 0; i < teamNodes.length; i++) {
         const childRect = teamNodes[i].getBoundingClientRect();
@@ -428,9 +435,181 @@ const handleMileStoneDrag = (event, milestone_key) => {
   }
 
 
+  // _____________CONNECTIONS________________
+  // ________________________________________
+  // ________________________________________
+  // ________________________________________
+  // ________________________________________
 
+  // Calculate the accumulated Y offset for a team based on teamOrder
+  const getTeamYOffset = (teamId) => {
+    let offset = 0;
+    for (const id of teamOrder) {
+      if (id === teamId) break;
+      offset += teams[id]?.height || 0;
+      // Drop highlighter: marginTop + height + marginBottom = 5 + 5 + 5 = 15
+      offset += TEAM_DRAG_HIGHLIGHT_HEIGHT + MARIGN_BETWEEN_DRAG_HIGHLIGHT * 2;
+    }
+    return offset;
+  }
 
+  // Get the task's Y position within its team
+  const getTaskYOffset = (taskId, teamId) => {
+    const team = teams[teamId];
+    if (!team) return 0;
+    const taskIndex = team.tasks.indexOf(taskId);
+    return taskIndex * TASKHEIGHT;
+  }
 
+  // Get absolute position of a milestone's handle in the container
+  const getMilestoneHandlePosition = (milestoneId, handleType) => {
+    const milestone = milestones[milestoneId];
+    if (!milestone) return null;
+
+    const task = tasks[milestone.task];
+    if (!task) return null;
+
+    const teamId = task.team;
+    
+    // Calculate X position
+    // Left side of milestone area starts after TEAMWIDTH + TASKWIDTH
+    const milestoneAreaStart = TEAMWIDTH + TASKWIDTH;
+    const milestoneX = milestone.x || (milestone.start_index * DAYWIDTH);
+    const milestoneWidth = DAYWIDTH * milestone.duration;
+    
+    // Account for p-1 (4px) padding on milestone container
+    const handleX = handleType === "source"
+      ? milestoneAreaStart + milestoneX + milestoneWidth - 4  // right edge of visible milestone
+      : milestoneAreaStart + milestoneX + 4;  // left edge of visible milestone
+
+    // Calculate Y position
+    const teamYOffset = getTeamYOffset(teamId);
+    const taskYOffset = getTaskYOffset(milestone.task, teamId);
+    // Drop highlighter: marginTop + height + marginBottom = 5 + 5 + 5 = 15
+    const dropHighlightOffset = TEAM_DRAG_HIGHLIGHT_HEIGHT + MARIGN_BETWEEN_DRAG_HIGHLIGHT * 2;
+    
+    const handleY = teamYOffset + dropHighlightOffset + taskYOffset + (TASKHEIGHT / 2);
+
+    return { x: handleX, y: handleY };
+  }
+
+  // Handle connection drag start
+  const handleConnectionDragStart = (event, milestoneId, handleType) => {
+    event.stopPropagation();
+    event.preventDefault();
+
+    const handlePos = getMilestoneHandlePosition(milestoneId, handleType);
+    if (!handlePos) return;
+
+    setIsDraggingConnection(true);
+    setConnectionStart({ milestoneId, handleType, ...handlePos });
+    setConnectionEnd(handlePos);
+
+    const containerRect = teamContainerRef.current?.getBoundingClientRect();
+
+    const handleMouseMove = (e) => {
+      if (!containerRect) return;
+      setConnectionEnd({
+        x: e.clientX - containerRect.left,
+        y: e.clientY - containerRect.top,
+      });
+    };
+
+    const handleMouseUp = (e) => {
+      if (!containerRect) return;
+      
+      const mouseX = e.clientX - containerRect.left;
+      const mouseY = e.clientY - containerRect.top;
+
+      // Check if we're near any other milestone's handle
+      for (let key in milestones) {
+        if (String(key) === String(milestoneId)) continue;
+
+        // Check both source and target handles
+        for (let targetHandleType of ["source", "target"]) {
+          const handlePos = getMilestoneHandlePosition(key, targetHandleType);
+          if (!handlePos) continue;
+
+          const distance = Math.sqrt(
+            Math.pow(mouseX - handlePos.x, 2) +
+            Math.pow(mouseY - handlePos.y, 2)
+          );
+
+          if (distance < CONNECTION_RADIUS) {
+            // Create connection
+            createConnection(milestoneId, handleType, key, targetHandleType);
+            break;
+          }
+        }
+      }
+
+      setIsDraggingConnection(false);
+      setConnectionStart(null);
+      document.removeEventListener("mousemove", handleMouseMove);
+      document.removeEventListener("mouseup", handleMouseUp);
+    };
+
+    document.addEventListener("mousemove", handleMouseMove);
+    document.addEventListener("mouseup", handleMouseUp);
+  };
+
+  // Create a connection between two milestones
+  const createConnection = (fromId, fromHandle, toId, toHandle) => {
+    // Determine source and target based on handle types
+    let sourceId, targetId;
+    if (fromHandle === "source") {
+      sourceId = fromId;
+      targetId = toId;
+    } else {
+      sourceId = toId;
+      targetId = fromId;
+    }
+
+    // Check if connection already exists
+    const exists = connections.some(
+      conn => conn.source === sourceId && conn.target === targetId
+    );
+    if (exists) return;
+
+    setConnections(prev => [...prev, { source: sourceId, target: targetId }]);
+  };
+
+  // Generate SVG path for a connection (bezier curve)
+  const getConnectionPath = (startX, startY, endX, endY) => {
+    const controlPointOffset = Math.abs(endX - startX) * 0.5;
+    return `M ${startX} ${startY} C ${startX + controlPointOffset} ${startY}, ${endX - controlPointOffset} ${endY}, ${endX} ${endY}`;
+  };
+
+  // Generate straight line path for dragging
+  const getStraightPath = (startX, startY, endX, endY) => {
+    return `M ${startX} ${startY} L ${endX} ${endY}`;
+  };
+
+  // Delete a connection
+  const deleteConnection = (sourceId, targetId) => {
+    setConnections(prev => 
+      prev.filter(conn => !(conn.source === sourceId && conn.target === targetId))
+    );
+    // Clear selection if deleted connection was selected
+    if (selectedConnection?.source === sourceId && selectedConnection?.target === targetId) {
+      setSelectedConnection(null);
+    }
+  };
+
+  // Select a connection
+  const handleConnectionClick = (e, conn) => {
+    e.stopPropagation();
+    if (mode === "delete") {
+      deleteConnection(conn.source, conn.target);
+    } else {
+      // Toggle selection
+      if (selectedConnection?.source === conn.source && selectedConnection?.target === conn.target) {
+        setSelectedConnection(null);
+      } else {
+        setSelectedConnection({ source: conn.source, target: conn.target });
+      }
+    }
+  };
 
 
 
@@ -445,7 +624,10 @@ const handleMileStoneDrag = (event, milestone_key) => {
   return (
     <>
       {/* Single scrollable container - scrolls both X and Y */}
-      <div className="h-screen w-screen p-10 overflow-auto select-none">
+      <div 
+        className="h-screen w-screen p-10 overflow-auto select-none"
+        onClick={() => setSelectedConnection(null)} // Deselect on background click
+      >
         {/* Inner container with full width for horizontal scroll */}
         <div
           ref={teamContainerRef}
@@ -454,7 +636,107 @@ const handleMileStoneDrag = (event, milestone_key) => {
           }}
           className="relative"
         >
-          {mode}
+          {/* SVG Layer for Connections */}
+          <svg
+            className="absolute top-0 left-0 w-full h-full pointer-events-none"
+            style={{ zIndex: 100 }}
+          >
+            <defs>
+              <style>
+                {`
+                  @keyframes flowAnimation {
+                    from { stroke-dashoffset: 24; }
+                    to { stroke-dashoffset: 0; }
+                  }
+                  @keyframes flowAnimationSelected {
+                    from { stroke-dashoffset: 24; }
+                    to { stroke-dashoffset: 0; }
+                  }
+                `}
+              </style>
+            </defs>
+
+            {/* Render existing connections */}
+            {connections.map((conn) => {
+              const sourcePos = getMilestoneHandlePosition(conn.source, "source");
+              const targetPos = getMilestoneHandlePosition(conn.target, "target");
+
+              if (!sourcePos || !targetPos) return null;
+
+              const isSelected = selectedConnection?.source === conn.source && 
+                                 selectedConnection?.target === conn.target;
+
+              return (
+                <g key={`${conn.source}-${conn.target}`}>
+                  {/* Invisible wider path for easier clicking */}
+                  <path
+                    d={getConnectionPath(
+                      sourcePos.x,
+                      sourcePos.y,
+                      targetPos.x,
+                      targetPos.y
+                    )}
+                    stroke="transparent"
+                    strokeWidth="15"
+                    fill="none"
+                    style={{ cursor: "pointer", pointerEvents: "auto" }}
+                    onClick={(e) => handleConnectionClick(e, conn)}
+                  />
+                  {/* Visible animated path */}
+                  <path
+                    d={getConnectionPath(
+                      sourcePos.x,
+                      sourcePos.y,
+                      targetPos.x,
+                      targetPos.y
+                    )}
+                    stroke={isSelected ? "#6366f1" : "#374151"}
+                    strokeWidth={isSelected ? "3.5" : "2.5"}
+                    fill="none"
+                    strokeLinecap="round"
+                    strokeDasharray="8, 4"
+                    style={{
+                      animation: "flowAnimation 3s linear infinite",
+                      pointerEvents: "none",
+                      filter: isSelected ? "drop-shadow(0 0 3px rgba(99, 102, 241, 0.5))" : "none",
+                    }}
+                  />
+                </g>
+              );
+            })}
+
+            {/* Render dragging connection - straight line */}
+            {isDraggingConnection && connectionStart && (
+              <path
+                d={getStraightPath(
+                  connectionStart.x,
+                  connectionStart.y,
+                  connectionEnd.x,
+                  connectionEnd.y
+                )}
+                stroke="#6366f1"
+                strokeWidth="2"
+                strokeDasharray="5,5"
+                fill="none"
+                strokeLinecap="round"
+                opacity="0.7"
+                style={{ pointerEvents: "none" }}
+              />
+            )}
+          </svg>
+
+          {/* Mode indicator
+          <div className="sticky left-0 top-0 z-50 mb-2">
+            <span className={`px-3 py-1 rounded text-sm font-medium ${
+              mode === "drag" ? "bg-gray-200 text-gray-700" :
+              mode === "delete" ? "bg-red-200 text-red-700" :
+              mode === "duration" ? "bg-blue-200 text-blue-700" :
+              mode === "connect" ? "bg-green-200 text-green-700" : ""
+            }`}>
+              Mode: {mode} {mode === "connect" && "(Alt)"} {mode === "delete" && "(Ctrl)"} {mode === "duration" && "(Shift)"}
+            </span>
+          </div> */}
+
           {/* Teams List */}
           {teamOrder.map((team_key, index) => {
             const team = teams[team_key];
@@ -533,7 +815,7 @@ const handleMileStoneDrag = (event, milestone_key) => {
                             key={`${task_key}_container`}
                           >
                             <div>
-                                {tasks[task_key].name}
+                                {tasks[task_key]?.name}
                             </div>
 
 
@@ -572,19 +854,23 @@ const handleMileStoneDrag = (event, milestone_key) => {
 
 
                           {/* Milestone Rendering */}
-                          {tasks[task_key].milestones.map((milestone_from_task)=>{
+                          {tasks[task_key]?.milestones?.map((milestone_from_task)=>{
                             const milestone = milestones[milestone_from_task.id]
+                            if (!milestone) return null;
+                            
                             const showDelete = hoveredMilestone === milestone.id && mode === "delete"
                             const showDurationPlus = hoveredMilestone === milestone.id && mode === "duration"
                             const showDurationMinus = hoveredMilestone === milestone.id && mode === "duration" && milestone.duration > 1
+                            const showConnect = mode === "connect"
                             
 
 
                             return (
                                <div
                                   onMouseDown={(e)=>{
-                                    // handleMileStoneDrag(e, milestone_from_task.id)
-                                    handleMileStoneMouseDown(e, milestone_from_task.id)
+                                    if (mode !== "connect") {
+                                      handleMileStoneMouseDown(e, milestone_from_task.id)
+                                    }
                                   }}
 
                                   onMouseEnter={() => setHoveredMilestone(milestone.id)}
@@ -592,7 +878,7 @@ const handleMileStoneDrag = (event, milestone_key) => {
 
 
 
-                                  className=" absolute p-1"
+                                  className="absolute p-1 group"
                                   style={{
                                       height: `${TASKHEIGHT}px`,
                                       width: `${DAYWIDTH * milestone.duration}px`,
@@ -600,8 +886,8 @@ const handleMileStoneDrag = (event, milestone_key) => {
                                       opacity: ghost?.id === team_key ? 0.2 : 1,
                                   }}
                                   key={milestone.id}>
-                                    <div className="h-full w-full rounded bg-black text-white flex justify-center items-center">
-                                    {!showDelete && !showDurationPlus && !showDurationMinus && "X"}
+                                    <div className="h-full w-full rounded bg-slate-200 shadow-xl border border-gray-500 text-black flex justify-center items-center relative">
+                                    {!showDelete && !showDurationPlus && !showDurationMinus && !showConnect && "M"}
 
                                     {showDelete && (
                                       <DeleteForeverIcon
@@ -634,6 +920,39 @@ const handleMileStoneDrag = (event, milestone_key) => {
 
                                     
                                     </div>
+
+                                    {/* Connection Handles - always visible in connect mode, hover otherwise */}
+                                    {/* Target Handle (Left) */}
+                                    <div
+                                      className={`absolute w-3 h-3 bg-blue-500 rounded-full 
+                                                 transition-all cursor-crosshair
+                                                 border-2 border-white shadow
+                                                 ${showConnect ? 'opacity-100 scale-110' : 'opacity-0 group-hover:opacity-100'}
+                                                 hover:scale-150 hover:bg-blue-400`}
+                                      style={{
+                                        left: "-6px",
+                                        top: "50%",
+                                        transform: "translateY(-50%)",
+                                        zIndex: 200,
+                                      }}
+                                      onMouseDown={(e) => handleConnectionDragStart(e, milestone.id, "target")}
+                                    />
+
+                                    {/* Source Handle (Right) */}
+                                    <div
+                                      className={`absolute w-3 h-3 bg-green-500 rounded-full 
+                                                 transition-all cursor-crosshair
+                                                 border-2 border-white shadow
+                                                 ${showConnect ? 'opacity-100 scale-110' : 'opacity-0 group-hover:opacity-100'}
+                                                 hover:scale-150 hover:bg-green-400`}
+                                      style={{
+                                        right: "-6px",
+                                        top: "50%",
+                                        transform: "translateY(-50%)",
+                                        zIndex: 200,
+                                      }}
+                                      onMouseDown={(e) => handleConnectionDragStart(e, milestone.id, "source")}
+                                    />
                                     
                                     
                                   </div>
