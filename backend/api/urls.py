@@ -29,7 +29,15 @@ urlpatterns = [
     path("assign_idea_to_category/", assign_idea_to_category),
     path("rename_category/", rename_category),
     path("update_idea_title/", update_idea_title),
+    path("update_idea_headline/", update_idea_headline),
     path("toggle_archive_category/", toggle_archive_category),
+
+    # Legend Types
+    path("get_all_legend_types/", get_all_legend_types),
+    path("create_legend_type/", create_legend_type),
+    path("update_legend_type/", update_legend_type),
+    path("delete_legend_type/", delete_legend_type),
+    path("assign_idea_legend_type/", assign_idea_legend_type),
 
 
 

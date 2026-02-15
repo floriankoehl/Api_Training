@@ -7,9 +7,16 @@ from rest_framework import serializers
 
 
 class IdeaSerializer(serializers.ModelSerializer):
+    legend_type_id = serializers.PrimaryKeyRelatedField(
+        queryset=LegendType.objects.all(), 
+        source='legend_type', 
+        allow_null=True,
+        required=False
+    )
+    
     class Meta: 
         model = Idea
-        fields = "__all__"
+        fields = ["id", "title", "headline", "description", "category", "order_index", "legend_type_id"]
 
 
 @api_view(["GET"])
@@ -40,12 +47,13 @@ def get_all_ideas(request):
 def create_idea(request):
     title = request.data.get("idea_name", "").strip()
     description = request.data.get("description", "")
+    headline = request.data.get("headline", "").strip()
     if not title:
         return Response({"error": "Title is required"}, status=400)
     from django.db.models import Max
     max_order = Idea.objects.aggregate(Max('order_index'))['order_index__max']
     next_order = (max_order + 1) if max_order is not None else 0
-    idea = Idea.objects.create(title=title, description=description, order_index=next_order)
+    idea = Idea.objects.create(title=title, description=description, headline=headline, order_index=next_order)
     return Response({"created": True, "idea": IdeaSerializer(idea).data})
 
 
@@ -182,12 +190,79 @@ def update_idea_title(request):
 
 
 @api_view(["POST"])
+def update_idea_headline(request):
+    idea_id = request.data.get("id")
+    new_headline = request.data.get("headline", "").strip()
+    # Headline can be empty (optional)
+    Idea.objects.filter(id=idea_id).update(headline=new_headline)
+    return Response({"updated": True})
+
+
+@api_view(["POST"])
 def toggle_archive_category(request):
     category_id = request.data.get("id")
     category = Category.objects.get(id=category_id)
     category.archived = not category.archived
     category.save()
     return Response({"archived": category.archived})
+
+
+# ===== LEGEND TYPE ENDPOINTS =====
+
+class LegendTypeSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = LegendType
+        fields = "__all__"
+
+
+@api_view(["GET"])
+def get_all_legend_types(request):
+    legend_types = LegendType.objects.all()
+    return Response({"legend_types": LegendTypeSerializer(legend_types, many=True).data})
+
+
+@api_view(["POST"])
+def create_legend_type(request):
+    name = request.data.get("name", "New Type").strip()
+    color = request.data.get("color", "#cccccc")
+    max_order = LegendType.objects.aggregate(db_models.Max('order_index'))['order_index__max']
+    next_order = (max_order + 1) if max_order is not None else 0
+    legend_type = LegendType.objects.create(name=name, color=color, order_index=next_order)
+    return Response({"created": True, "legend_type": LegendTypeSerializer(legend_type).data})
+
+
+@api_view(["POST"])
+def update_legend_type(request):
+    legend_type_id = request.data.get("id")
+    legend_type = LegendType.objects.get(id=legend_type_id)
+    if "name" in request.data:
+        legend_type.name = request.data.get("name", "").strip()
+    if "color" in request.data:
+        legend_type.color = request.data.get("color")
+    legend_type.save()
+    return Response({"updated": True, "legend_type": LegendTypeSerializer(legend_type).data})
+
+
+@api_view(["DELETE"])
+def delete_legend_type(request):
+    legend_type_id = request.data.get("id")
+    # Set all ideas using this type back to null
+    Idea.objects.filter(legend_type_id=legend_type_id).update(legend_type=None)
+    LegendType.objects.filter(id=legend_type_id).delete()
+    return Response({"deleted": True})
+
+
+@api_view(["POST"])
+def assign_idea_legend_type(request):
+    idea_id = request.data.get("idea_id")
+    legend_type_id = request.data.get("legend_type_id")  # None to unassign
+    idea = Idea.objects.get(id=idea_id)
+    if legend_type_id is not None:
+        idea.legend_type_id = legend_type_id
+    else:
+        idea.legend_type = None
+    idea.save()
+    return Response({"updated": True})
 
 
 

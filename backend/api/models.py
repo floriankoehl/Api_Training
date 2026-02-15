@@ -73,14 +73,22 @@ class Category(models.Model):
     archived = models.BooleanField(default=False)
 
 
+class LegendType(models.Model):
+    name = models.CharField(max_length=100)
+    color = models.CharField(max_length=20, default="#ffffff")  # Hex color
+    order_index = models.IntegerField(default=0)
 
+    class Meta:
+        ordering = ["order_index"]
 
 
 class Idea(models.Model):
     title = models.CharField(max_length=500)
+    headline = models.CharField(max_length=200, blank=True, default="")  # Optional short title
     description = models.TextField()
     category = models.ForeignKey(Category, on_delete=models.SET_NULL, null=True)
     order_index = models.IntegerField(default=0)
+    legend_type = models.ForeignKey(LegendType, on_delete=models.SET_NULL, null=True, blank=True)
 
     class Meta: 
         ordering = ["order_index"]

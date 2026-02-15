@@ -19,7 +19,7 @@ function Button({ text, handleButtonClick }) {
   );
 }
 
-function CreateCategoryForm({ onButtonClick }) {
+function CreateCategoryForm({ onButtonClick, onCancel }) {
   const [categoryName, setCategoryName] = useState("");
 
   const create_category = async () => {
@@ -39,7 +39,7 @@ function CreateCategoryForm({ onButtonClick }) {
   };
 
   return (
-    <div className="w-100 border border-gray-300 p-5 rounded shadow-xl bg-white justify-center items-center">
+    <div className="w-100 border border-gray-300 p-5 rounded shadow-xl bg-white justify-center items-center relative">
       <div className="flex flex-col mb-4">
         <TextField
           value={categoryName}
@@ -55,8 +55,15 @@ function CreateCategoryForm({ onButtonClick }) {
           variant="outlined"
         />
       </div>
-      <div className="w-full flex justify-center items-center">
+      <div className="w-full flex justify-center items-center gap-2">
         <Button handleButtonClick={button_click} text={"Create"} />
+        <div
+          onClick={onCancel}
+          className="bg-gray-100 select-none shadow-xl border border-gray-200 rounded-full h-10 w-24
+            flex justify-center items-center hover:bg-gray-200 active:bg-gray-300 cursor-pointer"
+        >
+          Cancel
+        </div>
       </div>
     </div>
   );
@@ -66,8 +73,8 @@ function CreateCategoryForm({ onButtonClick }) {
 function ConfirmModal({ message, onConfirm, onCancel }) {
   return (
     <>
-      <div className="fixed inset-0 bg-black/40 z-40" onClick={onCancel} />
-      <div className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-white rounded-lg shadow-2xl p-6 z-50 min-w-[300px]">
+      <div className="fixed inset-0 bg-black/40 z-[9998]" onClick={onCancel} />
+      <div className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-white rounded-lg shadow-2xl p-6 z-[9999] min-w-[300px]">
         <p className="text-base mb-5">{message}</p>
         <div className="flex justify-end gap-3">
           <button
@@ -99,7 +106,14 @@ export default function IdeaBinV2() {
   const [unassignedOrder, setUnassignedOrder] = useState([]);
   const [categoryOrders, setCategoryOrders] = useState({});
   const [ideaName, setIdeaName] = useState("");
+  const [ideaHeadline, setIdeaHeadline] = useState("");
   const [sidebarWidth, setSidebarWidth] = useState(300);
+
+  // Individual idea collapse state
+  const [collapsedIdeas, setCollapsedIdeas] = useState({});
+
+  // Category minimized state (stores original size before minimize)
+  const [minimizedCategories, setMinimizedCategories] = useState({});
 
   // Drag state
   const [dragging, setDragging] = useState(null);
@@ -114,6 +128,10 @@ export default function IdeaBinV2() {
   const [editingCategoryName, setEditingCategoryName] = useState("");
   const [editingIdeaId, setEditingIdeaId] = useState(null);
   const [editingIdeaTitle, setEditingIdeaTitle] = useState("");
+  const [editingIdeaHeadline, setEditingIdeaHeadline] = useState("");
+
+  // Form height state (resizable)
+  const [formHeight, setFormHeight] = useState(120);
 
   // Confirm modal
   const [confirmModal, setConfirmModal] = useState(null);
@@ -121,8 +139,26 @@ export default function IdeaBinV2() {
   // Archive drawer
   const [showArchive, setShowArchive] = useState(false);
 
+  // Legend state
+  const [legendTypes, setLegendTypes] = useState({});
+  const [draggingLegend, setDraggingLegend] = useState(null);
+  const [hoverIdeaForLegend, setHoverIdeaForLegend] = useState(null);
+  const [editingLegendId, setEditingLegendId] = useState(null);
+  const [editingLegendName, setEditingLegendName] = useState("");
+  const [showLegendColorPicker, setShowLegendColorPicker] = useState(null);
+  const [showCreateLegend, setShowCreateLegend] = useState(false);
+  const [newLegendColor, setNewLegendColor] = useState("#6366f1");
+  const [newLegendName, setNewLegendName] = useState("");
+  const [legendCollapsed, setLegendCollapsed] = useState(false);
+
+  // Filter state - global and per-category (null = unassigned, number = type id)
+  const [globalTypeFilter, setGlobalTypeFilter] = useState([]); // empty = show all
+  const [categoryTypeFilters, setCategoryTypeFilters] = useState({}); // {categoryId: [typeIds]}
+  const [showCategoryFilter, setShowCategoryFilter] = useState(null); // which category filter is open
+
   const IdeaListRef = useRef(null);
   const categoryRefs = useRef({});
+  const ideaRefs = useRef({});
 
   // ===== CATEGORY RESIZE =====
 
@@ -192,8 +228,7 @@ export default function IdeaBinV2() {
         e.clientX < right_bottom_coordinates.x + 20 &&
         e.clientX > right_bottom_coordinates.x - 20 &&
         e.clientY < right_bottom_coordinates.y + 20 &&
-        e.clientY > right_bottom_coordinates.y - 20 &&
-        e.ctrlKey
+        e.clientY > right_bottom_coordinates.y - 20
       ) {
         hovering = true;
         setResizeCategory(category.id);
@@ -214,13 +249,24 @@ export default function IdeaBinV2() {
 
   useEffect(() => {
     const handleMouseDown = (e) => {
-      if (resizeCategory !== null && e.ctrlKey) {
+      if (resizeCategory !== null) {
         handleResizeProportions(e, resizeCategory);
       }
     };
     document.addEventListener("mousedown", handleMouseDown);
     return () => document.removeEventListener("mousedown", handleMouseDown);
   }, [resizeCategory]);
+
+  // Close category filter dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (e) => {
+      if (showCategoryFilter && !e.target.closest('[data-filter-dropdown]')) {
+        setShowCategoryFilter(null);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [showCategoryFilter]);
 
   // ===== CATEGORY API =====
 
@@ -463,9 +509,10 @@ export default function IdeaBinV2() {
     await fetch(`${API}/create_idea/`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ idea_name: ideaName, description: "" }),
+      body: JSON.stringify({ idea_name: ideaName, description: "", headline: ideaHeadline }),
     });
     setIdeaName("");
+    setIdeaHeadline("");
     fetch_all_ideas();
   };
 
@@ -478,16 +525,24 @@ export default function IdeaBinV2() {
     fetch_all_ideas();
   };
 
-  const update_idea_title_api = async (idea_id, new_title) => {
+  const update_idea_title_api = async (idea_id, new_title, new_headline = null) => {
     if (!new_title.trim()) return;
     await fetch(`${API}/update_idea_title/`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ id: idea_id, title: new_title }),
     });
+    // Also update headline if provided
+    if (new_headline !== null) {
+      await fetch(`${API}/update_idea_headline/`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: idea_id, headline: new_headline }),
+      });
+    }
     setIdeas((prev) => ({
       ...prev,
-      [idea_id]: { ...prev[idea_id], title: new_title },
+      [idea_id]: { ...prev[idea_id], title: new_title, headline: new_headline !== null ? new_headline : prev[idea_id].headline },
     }));
   };
 
@@ -644,11 +699,148 @@ export default function IdeaBinV2() {
     document.addEventListener("mouseup", onMouseUp);
   };
 
+  // ===== LEGEND TYPE API =====
+
+  const fetch_legend_types = async () => {
+    try {
+      const res = await fetch(`${API}/get_all_legend_types/`);
+      const data = await res.json();
+      const legend_list = data?.legend_types || [];
+      const legend_object = {};
+      for (const lt of legend_list) {
+        legend_object[lt.id] = lt;
+      }
+      setLegendTypes(legend_object);
+    } catch (err) {
+      console.error("Failed to fetch legend types:", err);
+    }
+  };
+
+  const create_legend_type = async (name, color) => {
+    const res = await fetch(`${API}/create_legend_type/`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name, color }),
+    });
+    const data = await res.json();
+    if (data.legend_type) {
+      setLegendTypes((prev) => ({
+        ...prev,
+        [data.legend_type.id]: data.legend_type,
+      }));
+    }
+    return data;
+  };
+
+  const update_legend_type = async (id, updates) => {
+    await fetch(`${API}/update_legend_type/`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id, ...updates }),
+    });
+    setLegendTypes((prev) => ({
+      ...prev,
+      [id]: { ...prev[id], ...updates },
+    }));
+  };
+
+  const delete_legend_type = async (id) => {
+    await fetch(`${API}/delete_legend_type/`, {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id }),
+    });
+    setLegendTypes((prev) => {
+      const updated = { ...prev };
+      delete updated[id];
+      return updated;
+    });
+    // Update ideas that had this legend type
+    setIdeas((prev) => {
+      const updated = { ...prev };
+      for (const [key, idea] of Object.entries(updated)) {
+        if (idea.legend_type_id === id) {
+          updated[key] = { ...idea, legend_type_id: null };
+        }
+      }
+      return updated;
+    });
+  };
+
+  const assign_idea_legend_type = async (idea_id, legend_type_id) => {
+    await fetch(`${API}/assign_idea_legend_type/`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ idea_id, legend_type_id }),
+    });
+    setIdeas((prev) => ({
+      ...prev,
+      [idea_id]: { ...prev[idea_id], legend_type_id },
+    }));
+  };
+
+  // ===== LEGEND DRAG HANDLER =====
+
+  const handleLegendDrag = (event, legendTypeId) => {
+    event.preventDefault();
+    const startX = event.clientX;
+    const startY = event.clientY;
+    let currentHoverIdeaId = null;
+    
+    setDraggingLegend({
+      id: legendTypeId,
+      x: startX,
+      y: startY,
+      color: legendTypeId ? legendTypes[legendTypeId]?.color : "#374151",
+    });
+
+    const onMouseMove = (e) => {
+      setDraggingLegend((prev) => ({
+        ...prev,
+        x: e.clientX,
+        y: e.clientY,
+      }));
+
+      // Check if hovering over any idea
+      let foundIdeaId = null;
+      for (const [ideaId, ref] of Object.entries(ideaRefs.current)) {
+        if (ref) {
+          const rect = ref.getBoundingClientRect();
+          if (
+            e.clientX >= rect.left &&
+            e.clientX <= rect.right &&
+            e.clientY >= rect.top &&
+            e.clientY <= rect.bottom
+          ) {
+            foundIdeaId = parseInt(ideaId);
+            break;
+          }
+        }
+      }
+      currentHoverIdeaId = foundIdeaId;
+      setHoverIdeaForLegend(foundIdeaId);
+    };
+
+    const onMouseUp = () => {
+      if (currentHoverIdeaId) {
+        assign_idea_legend_type(currentHoverIdeaId, legendTypeId);
+      }
+      setDraggingLegend(null);
+      setHoverIdeaForLegend(null);
+      document.removeEventListener("mousemove", onMouseMove);
+      document.removeEventListener("mouseup", onMouseUp);
+    };
+
+    document.addEventListener("mousemove", onMouseMove);
+    document.addEventListener("mouseup", onMouseUp);
+  };
+
   // ===== INIT =====
 
   useEffect(() => {
     fetch_categories();
     fetch_all_ideas();
+    fetch_legend_types();
   }, []);
 
   // ===== RENDER HELPER =====
@@ -664,6 +856,24 @@ export default function IdeaBinV2() {
         String(dragSource.id) === String(source.id));
 
     const isEditing = editingIdeaId === ideaId;
+    const legendType = idea.legend_type_id ? legendTypes[idea.legend_type_id] : null;
+    const isHoveredForLegend = hoverIdeaForLegend === ideaId;
+    
+    // Individual idea collapse only
+    const isIdeaCollapsed = collapsedIdeas[ideaId] ?? false;
+
+    // For collapsed view: show headline or truncated title
+    const getDisplayText = () => {
+      if (idea.headline) {
+        return <span className="font-semibold">{idea.headline}</span>;
+      }
+      // No headline - truncate title after ~5 words
+      const words = idea.title.split(/\s+/);
+      if (words.length > 5) {
+        return <span className="font-semibold">{words.slice(0, 5).join(" ")}...</span>;
+      }
+      return <span className="font-semibold">{idea.title}</span>;
+    };
 
     return (
       <div key={`idea_${ideaId}`} data-idea-item="true">
@@ -681,35 +891,27 @@ export default function IdeaBinV2() {
         />
 
         {isEditing ? (
-          <div className="w-full mb-1">
-            <input
-              autoFocus
-              value={editingIdeaTitle}
-              onChange={(e) => setEditingIdeaTitle(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") {
-                  update_idea_title_api(ideaId, editingIdeaTitle);
-                  setEditingIdeaId(null);
-                } else if (e.key === "Escape") {
-                  setEditingIdeaId(null);
-                }
-              }}
-              onBlur={() => {
-                update_idea_title_api(ideaId, editingIdeaTitle);
-                setEditingIdeaId(null);
-              }}
-              className="w-full bg-gray-800 text-white text-xs px-2 py-1.5 rounded outline-none border border-blue-400 leading-snug"
-            />
+          <div className="w-full rounded bg-blue-50 text-blue-600 px-2 py-1.5 text-xs mb-1 border border-blue-200 italic">
+            Editing above...
           </div>
         ) : (
           <div
+            ref={(el) => (ideaRefs.current[ideaId] = el)}
             onMouseDown={(e) => {
               e.stopPropagation();
               handleIdeaDrag(e, idea, arrayIndex, source);
             }}
             style={{
               backgroundColor:
-                isSource && arrayIndex === prevIndex ? "gray" : "#1a1a1a",
+                isHoveredForLegend
+                  ? (draggingLegend?.color || "#e0e7ff")
+                  : isSource && arrayIndex === prevIndex
+                  ? "#e5e7eb"
+                  : legendType
+                  ? `${legendType.color}20`
+                  : "#ffffff4b",
+              borderLeftColor: legendType ? legendType.color : "#374151",
+              borderLeftWidth: "4px",
               transform:
                 isSource &&
                 hoverIndex !== null &&
@@ -717,27 +919,67 @@ export default function IdeaBinV2() {
                 arrayIndex !== prevIndex
                   ? "translateY(6px)"
                   : "translateY(0px)",
-              transition: "transform 200ms ease, background-color 200ms ease",
+              transition: "transform 200ms ease, background-color 200ms ease, border-color 200ms ease",
             }}
-            className="w-full rounded text-white px-2 py-1.5 flex justify-between items-start text-xs mb-1 cursor-grab leading-snug"
+            className={`w-full rounded text-gray-800 px-2 py-1.5 flex justify-between items-start text-xs mb-1 cursor-grab leading-snug shadow-sm border border-gray-200 hover:shadow-md hover:border-gray-300 ${isHoveredForLegend ? 'ring-2 ring-offset-1' : ''}`}
           >
-            <div className="flex-1 mr-1 break-words">{idea.title}</div>
-            <div className="flex-shrink-0 mt-0.5 flex items-center gap-0.5">
+            <div className="flex items-start gap-1.5 flex-1 mr-1">
+              {/* Collapse toggle - colored triangle replacing dot */}
+              <span
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setCollapsedIdeas((prev) => ({
+                    ...prev,
+                    [ideaId]: !prev[ideaId],
+                  }));
+                }}
+                className="cursor-pointer flex-shrink-0 text-sm mt-0"
+                style={{ color: legendType ? legendType.color : "#374151" }}
+                title={`${isIdeaCollapsed ? "Expand" : "Collapse"} - ${legendType ? legendType.name : "Unassigned"}`}
+              >
+                {isIdeaCollapsed ? '▶' : '▼'}
+              </span>
+              <div className="break-words whitespace-pre-wrap">
+                {isIdeaCollapsed ? (
+                  getDisplayText()
+                ) : (
+                  <>
+                    {idea.headline && <div className="font-semibold mb-0.5">{idea.headline}</div>}
+                    {idea.title}
+                  </>
+                )}
+              </div>
+            </div>
+            <div className="flex-shrink-0 mt-0.5 flex items-center gap-0.5 text-gray-400">
               <EditIcon
                 onClick={(e) => {
                   e.stopPropagation();
                   setEditingIdeaId(ideaId);
                   setEditingIdeaTitle(idea.title);
+                  setEditingIdeaHeadline(idea.headline || "");
                 }}
-                className="hover:text-blue-400! cursor-pointer"
+                className="hover:text-blue-500! cursor-pointer"
                 style={{ fontSize: 13 }}
               />
               <DeleteForeverIcon
                 onClick={(e) => {
                   e.stopPropagation();
-                  delete_idea(idea.id);
+                  setConfirmModal({
+                    message: (
+                      <div>
+                        <p className="mb-2">Delete this idea?</p>
+                        {idea.headline && <p className="font-semibold text-sm">{idea.headline}</p>}
+                        <p className="text-sm text-gray-600 mt-1">{idea.title.length > 100 ? idea.title.slice(0, 100) + "..." : idea.title}</p>
+                      </div>
+                    ),
+                    onConfirm: () => {
+                      delete_idea(idea.id);
+                      setConfirmModal(null);
+                    },
+                    onCancel: () => setConfirmModal(null),
+                  });
                 }}
-                className="hover:text-red-500!"
+                className="hover:text-red-500! cursor-pointer"
                 style={{ fontSize: 14 }}
               />
             </div>
@@ -760,13 +1002,14 @@ export default function IdeaBinV2() {
         {/* Create Category Form Overlay */}
         <div
           style={{ display: displayForm ? "block" : "none" }}
-          className="fixed z-20"
+          className="fixed z-[9998] top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2"
         >
-          <CreateCategoryForm onButtonClick={customFormButtonClick} />
+          <CreateCategoryForm onButtonClick={customFormButtonClick} onCancel={() => setDisplayForm(false)} />
         </div>
         <div
+          onClick={() => setDisplayForm(false)}
           style={{ display: displayForm ? "block" : "none" }}
-          className="h-full w-full fixed bg-black/40 z-10"
+          className="h-full w-full fixed inset-0 bg-black/40 z-[9997]"
         />
 
         {/* Confirm Modal */}
@@ -782,27 +1025,120 @@ export default function IdeaBinV2() {
           {/* ===== LEFT SIDEBAR ===== */}
           <div
             style={{ width: `${sidebarWidth}px`, minWidth: 200 }}
-            className="h-full shadow-xl bg-gray-200 border border-gray-200 select-none flex flex-col flex-shrink-0"
+            className="h-full shadow-xl bg-white border border-gray-200 select-none flex flex-col flex-shrink-0"
           >
-            {/* Create Idea Form */}
-            <div className="bg-gray-100 p-3 flex-shrink-0">
-              <h1 className="text-xl mb-2">New Idea</h1>
+            {/* Create/Edit Idea Form */}
+            <div className="bg-gray-50 p-3 flex-shrink-0 relative border-b border-gray-200" style={{ minHeight: formHeight }}>
+              <h1 className="text-xl mb-2">
+                {editingIdeaId ? "Edit Idea" : "New Idea"}
+              </h1>
+              {/* Headline field */}
               <TextField
-                value={ideaName}
-                onChange={(e) => setIdeaName(e.target.value)}
+                value={editingIdeaId ? editingIdeaHeadline : ideaHeadline}
+                onChange={(e) => {
+                  if (editingIdeaId) {
+                    setEditingIdeaHeadline(e.target.value);
+                  } else {
+                    setIdeaHeadline(e.target.value);
+                  }
+                }}
+                id="idea-headline"
+                label="Headline (optional)"
+                variant="outlined"
+                size="small"
+                fullWidth
+                sx={{ backgroundColor: "white", borderRadius: 1, marginBottom: 1 }}
+              />
+              <TextField
+                value={editingIdeaId ? editingIdeaTitle : ideaName}
+                onChange={(e) => {
+                  if (editingIdeaId) {
+                    setEditingIdeaTitle(e.target.value);
+                  } else {
+                    setIdeaName(e.target.value);
+                  }
+                }}
                 onKeyDown={(e) => {
                   if (e.key === "Enter" && !e.shiftKey) {
                     e.preventDefault();
-                    create_idea();
+                    if (editingIdeaId) {
+                      update_idea_title_api(editingIdeaId, editingIdeaTitle, editingIdeaHeadline);
+                      setEditingIdeaId(null);
+                      setEditingIdeaTitle("");
+                      setEditingIdeaHeadline("");
+                    } else {
+                      create_idea();
+                    }
+                  } else if (e.key === "Escape" && editingIdeaId) {
+                    setEditingIdeaId(null);
+                    setEditingIdeaTitle("");
+                    setEditingIdeaHeadline("");
                   }
                 }}
                 id="idea-name"
-                label="What's your idea?"
+                label={editingIdeaId ? "Edit your idea..." : "What's your idea?"}
                 variant="outlined"
                 multiline
-                rows={2}
+                minRows={2}
+                maxRows={Math.max(2, Math.floor((formHeight - (editingIdeaId ? 100 : 60)) / 24))}
                 fullWidth
                 sx={{ backgroundColor: "white", borderRadius: 1 }}
+              />
+              {/* Action buttons */}
+              <div className="flex gap-2 mt-2">
+                {editingIdeaId ? (
+                  <>
+                    <button
+                      onClick={() => {
+                        update_idea_title_api(editingIdeaId, editingIdeaTitle, editingIdeaHeadline);
+                        setEditingIdeaId(null);
+                        setEditingIdeaTitle("");
+                        setEditingIdeaHeadline("");
+                      }}
+                      className="px-3 py-1 bg-blue-500 text-white rounded hover:bg-blue-600 text-sm"
+                    >
+                      Update
+                    </button>
+                    <button
+                      onClick={() => {
+                        setEditingIdeaId(null);
+                        setEditingIdeaTitle("");
+                        setEditingIdeaHeadline("");
+                      }}
+                      className="px-3 py-1 bg-gray-300 text-gray-700 rounded hover:bg-gray-400 text-sm"
+                    >
+                      Cancel
+                    </button>
+                  </>
+                ) : (
+                  ideaName.trim() && (
+                    <button
+                      onClick={create_idea}
+                      className="px-3 py-1 bg-green-500 text-white rounded hover:bg-green-600 text-sm"
+                    >
+                      Create
+                    </button>
+                  )
+                )}
+              </div>
+              {/* Resize handle */}
+              <div
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  const startY = e.clientY;
+                  const startHeight = formHeight;
+                  const onMouseMove = (ev) => {
+                    const delta = ev.clientY - startY;
+                    setFormHeight(Math.max(100, Math.min(startHeight + delta, 400)));
+                  };
+                  const onMouseUp = () => {
+                    document.removeEventListener("mousemove", onMouseMove);
+                    document.removeEventListener("mouseup", onMouseUp);
+                  };
+                  document.addEventListener("mousemove", onMouseMove);
+                  document.addEventListener("mouseup", onMouseUp);
+                }}
+                className="absolute bottom-0 left-0 right-0 h-2 bg-gray-300 hover:bg-blue-400 cursor-ns-resize transition-colors"
               />
             </div>
 
@@ -811,14 +1147,196 @@ export default function IdeaBinV2() {
               ref={IdeaListRef}
               style={{
                 backgroundColor:
-                  dragging && hoverUnassigned ? "#c7cbd1" : "#e5e7eb",
+                  dragging && hoverUnassigned ? "#f3f4f6" : "#ffffff",
                 transition: "background-color 150ms ease",
               }}
               className="flex-1 p-2 relative overflow-y-auto"
             >
               <h1 className="text-xl mb-1">Unassigned Ideas</h1>
-              {unassignedOrder.map((ideaId, arrayIndex) =>
-                renderIdeaItem(ideaId, arrayIndex, { type: "unassigned" })
+              {unassignedOrder
+                .filter((ideaId) => {
+                  if (globalTypeFilter.length === 0) return true;
+                  const idea = ideas[ideaId];
+                  if (!idea) return false;
+                  // Check if idea's type matches any selected filter
+                  if (globalTypeFilter.includes("unassigned") && !idea.legend_type_id) return true;
+                  if (idea.legend_type_id && globalTypeFilter.includes(idea.legend_type_id)) return true;
+                  return false;
+                })
+                .map((ideaId, arrayIndex) =>
+                  renderIdeaItem(ideaId, arrayIndex, { type: "unassigned" })
+                )}
+            </div>
+
+            {/* LEGEND PANEL - Inside Sidebar */}
+            <div className="bg-white border-t border-gray-300 p-3 flex-shrink-0">
+              <div 
+                className="flex items-center justify-between cursor-pointer"
+                onClick={() => setLegendCollapsed(!legendCollapsed)}
+              >
+                <h3 className="text-sm font-semibold text-gray-600">Legend {globalTypeFilter.length > 0 && <span className="text-blue-500">(filtered)</span>}</h3>
+                <span className="text-gray-400 text-xs">{legendCollapsed ? '▲' : '▼'}</span>
+              </div>
+              
+              {!legendCollapsed && (
+                <>
+                  {/* Clear filter button */}
+                  {globalTypeFilter.length > 0 && (
+                    <button
+                      onClick={() => setGlobalTypeFilter([])}
+                      className="w-full mt-1 mb-2 text-xs px-2 py-1 bg-blue-100 text-blue-600 rounded hover:bg-blue-200 transition-colors"
+                    >
+                      Clear Filter
+                    </button>
+                  )}
+                  
+                  {/* Unassigned type (black) - always first */}
+                  <div 
+                    className={`flex items-center gap-2 mb-1.5 group mt-2 cursor-pointer rounded px-1 py-0.5 transition-colors ${globalTypeFilter.includes("unassigned") ? "bg-gray-200" : "hover:bg-gray-100"}`}
+                    onClick={() => {
+                      setGlobalTypeFilter((prev) => 
+                        prev.includes("unassigned") 
+                          ? prev.filter((t) => t !== "unassigned") 
+                          : [...prev, "unassigned"]
+                      );
+                    }}
+                  >
+                    <div
+                      onMouseDown={(e) => { e.stopPropagation(); handleLegendDrag(e, null); }}
+                      className="w-6 h-6 rounded-full cursor-grab hover:scale-110 transition-transform shadow-sm border border-gray-200 bg-gray-700"
+                      title="Drag to remove type"
+                    />
+                    <span className="text-xs text-gray-500 italic flex-1">Unassigned</span>
+                    {globalTypeFilter.includes("unassigned") && <span className="text-blue-500 text-xs">✓</span>}
+                  </div>
+
+                  {/* Custom legend types */}
+                  {Object.values(legendTypes).map((lt) => (
+                    <div 
+                      key={lt.id} 
+                      className={`flex items-center gap-2 mb-1.5 group cursor-pointer rounded px-1 py-0.5 transition-colors ${globalTypeFilter.includes(lt.id) ? "bg-gray-200" : "hover:bg-gray-100"}`}
+                      onClick={() => {
+                        setGlobalTypeFilter((prev) => 
+                          prev.includes(lt.id) 
+                            ? prev.filter((t) => t !== lt.id) 
+                            : [...prev, lt.id]
+                        );
+                      }}
+                    >
+                      <div
+                        onMouseDown={(e) => { e.stopPropagation(); handleLegendDrag(e, lt.id); }}
+                        className="w-6 h-6 rounded-full cursor-grab hover:scale-110 transition-transform shadow-sm border border-gray-200"
+                        style={{ backgroundColor: lt.color }}
+                        title={`Drag to assign: ${lt.name}`}
+                      />
+                      {editingLegendId === lt.id ? (
+                        <input
+                          autoFocus
+                          value={editingLegendName}
+                          onChange={(e) => setEditingLegendName(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") {
+                              update_legend_type(lt.id, { name: editingLegendName });
+                              setEditingLegendId(null);
+                            } else if (e.key === "Escape") {
+                              setEditingLegendId(null);
+                            }
+                          }}
+                          onBlur={() => {
+                            update_legend_type(lt.id, { name: editingLegendName });
+                            setEditingLegendId(null);
+                          }}
+                          onClick={(e) => e.stopPropagation()}
+                          className="text-xs px-1 py-0.5 border border-blue-400 rounded outline-none flex-1 min-w-0"
+                        />
+                      ) : (
+                        <span
+                          onDoubleClick={(e) => {
+                            e.stopPropagation();
+                            setEditingLegendId(lt.id);
+                            setEditingLegendName(lt.name);
+                          }}
+                          className="text-xs text-gray-700 cursor-text flex-1"
+                        >
+                          {lt.name}
+                        </span>
+                      )}
+                      {globalTypeFilter.includes(lt.id) && <span className="text-blue-500 text-xs">✓</span>}
+                      <input
+                        type="color"
+                        value={lt.color}
+                        onChange={(e) => update_legend_type(lt.id, { color: e.target.value })}
+                        onClick={(e) => e.stopPropagation()}
+                        className="w-4 h-4 cursor-pointer opacity-0 group-hover:opacity-100 transition-opacity"
+                        title="Change color"
+                      />
+                      <DeleteForeverIcon
+                        onClick={(e) => { e.stopPropagation(); delete_legend_type(lt.id); }}
+                        className="text-gray-300 hover:text-red-500! cursor-pointer opacity-0 group-hover:opacity-100 transition-opacity"
+                        style={{ fontSize: 16 }}
+                      />
+                    </div>
+                  ))}
+
+                  {/* Create new legend type */}
+                  {showCreateLegend ? (
+                    <div className="mt-2 p-2 bg-gray-50 rounded border border-gray-200">
+                      <div className="flex items-center gap-2 mb-2">
+                        <input
+                          type="color"
+                          value={newLegendColor}
+                          onChange={(e) => setNewLegendColor(e.target.value)}
+                          className="w-6 h-6 cursor-pointer rounded"
+                        />
+                        <input
+                          autoFocus
+                          value={newLegendName}
+                          onChange={(e) => setNewLegendName(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter" && newLegendName.trim()) {
+                              create_legend_type(newLegendName, newLegendColor);
+                              setNewLegendName("");
+                              setNewLegendColor("#6366f1");
+                              setShowCreateLegend(false);
+                            } else if (e.key === "Escape") {
+                              setShowCreateLegend(false);
+                            }
+                          }}
+                          placeholder="Type name..."
+                          className="text-xs px-2 py-1 border border-gray-300 rounded outline-none flex-1 focus:border-blue-400"
+                        />
+                      </div>
+                      <div className="flex gap-1">
+                        <button
+                          onClick={() => {
+                            if (newLegendName.trim()) {
+                              create_legend_type(newLegendName, newLegendColor);
+                              setNewLegendName("");
+                              setNewLegendColor("#6366f1");
+                              setShowCreateLegend(false);
+                            }
+                          }}
+                          className="flex-1 text-xs px-2 py-1 bg-blue-500 text-white rounded hover:bg-blue-600"
+                        >
+                          Create
+                        </button>
+                        <button
+                          onClick={() => setShowCreateLegend(false)}
+                          className="text-xs px-2 py-1 bg-gray-200 text-gray-600 rounded hover:bg-gray-300"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <button
+                      onClick={() => setShowCreateLegend(true)}
+                      className="w-full mt-2 text-xs px-2 py-1.5 border border-dashed border-gray-300 rounded text-gray-500 hover:border-gray-400 hover:text-gray-600 hover:bg-gray-50 transition-colors"
+                    >
+                      + Add Type
+                    </button>
+                  )}
+                </>
               )}
             </div>
           </div>
@@ -959,11 +1477,93 @@ export default function IdeaBinV2() {
                       </span>
                     )}
                     <div className="flex items-center gap-1">
+                      {/* Minimize/Restore button */}
+                      <span
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (minimizedCategories[category_key]) {
+                            // Restore to original size
+                            const original = minimizedCategories[category_key];
+                            setCategories((prev) => ({
+                              ...prev,
+                              [category_key]: {
+                                ...prev[category_key],
+                                width: original.width,
+                                height: original.height,
+                              },
+                            }));
+                            set_area_category(category_key, original.width, original.height);
+                            setMinimizedCategories((prev) => {
+                              const updated = { ...prev };
+                              delete updated[category_key];
+                              return updated;
+                            });
+                          } else {
+                            // Minimize to minimum size
+                            const minWidth = Math.max(80, category_data.name.length * 9 + 60);
+                            const minHeight = 50;
+                            setMinimizedCategories((prev) => ({
+                              ...prev,
+                              [category_key]: {
+                                width: category_data.width,
+                                height: category_data.height,
+                              },
+                            }));
+                            setCategories((prev) => ({
+                              ...prev,
+                              [category_key]: {
+                                ...prev[category_key],
+                                width: minWidth,
+                                height: minHeight,
+                              },
+                            }));
+                            set_area_category(category_key, minWidth, minHeight);
+                          }
+                        }}
+                        onDoubleClick={(e) => e.stopPropagation()}
+                        className="text-xs text-amber-700 hover:text-amber-900 cursor-pointer px-0.5"
+                        title={minimizedCategories[category_key] ? "Restore size" : "Minimize"}
+                      >
+                        {minimizedCategories[category_key] ? '◻' : '—'}
+                      </span>
+                      {/* Collapse all ideas toggle */}
+                      <span
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          // Toggle all ideas in this category
+                          const catIdeasList = categoryOrders[category_key] || [];
+                          const allCollapsed = catIdeasList.every((id) => collapsedIdeas[id]);
+                          const newState = {};
+                          catIdeasList.forEach((id) => {
+                            newState[id] = !allCollapsed;
+                          });
+                          setCollapsedIdeas((prev) => ({ ...prev, ...newState }));
+                        }}
+                        onDoubleClick={(e) => e.stopPropagation()}
+                        className="text-xs text-amber-700 hover:text-amber-900 cursor-pointer px-1"
+                        title={(categoryOrders[category_key] || []).every((id) => collapsedIdeas[id]) ? "Expand all ideas" : "Collapse all ideas"}
+                      >
+                        {(categoryOrders[category_key] || []).every((id) => collapsedIdeas[id]) ? '▼' : '▲'}
+                      </span>
+                      {/* Type filter button */}
+                      <span
+                        data-filter-dropdown
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setShowCategoryFilter(showCategoryFilter === category_key ? null : category_key);
+                        }}
+                        onDoubleClick={(e) => e.stopPropagation()}
+                        className={`text-xs cursor-pointer px-1 ${(categoryTypeFilters[category_key]?.length > 0) ? "text-blue-600" : "text-amber-700 hover:text-amber-900"}`}
+                        title="Filter by type"
+                      >
+                        ⚙
+                      </span>
                       <ArchiveIcon
                         onClick={(e) => {
                           e.stopPropagation();
                           toggle_archive_category(category_key);
                         }}
+                        onDoubleClick={(e) => e.stopPropagation()}
                         className="hover:text-amber-700! cursor-pointer"
                         style={{ fontSize: 16 }}
                         titleAccess="Archive"
@@ -976,11 +1576,70 @@ export default function IdeaBinV2() {
                             category_data.name
                           );
                         }}
+                        onDoubleClick={(e) => e.stopPropagation()}
                         className="hover:text-red-500! cursor-pointer"
                         style={{ fontSize: 18 }}
                       />
                     </div>
                   </div>
+
+                  {/* Filter dropdown */}
+                  {showCategoryFilter === category_key && (
+                    <div 
+                      data-filter-dropdown
+                      className="absolute top-8 right-0 z-50 bg-white rounded-lg shadow-xl border border-gray-200 p-2 min-w-[140px]"
+                      onMouseDown={(e) => e.stopPropagation()}
+                    >
+                      <div className="text-xs font-semibold text-gray-500 mb-1">Filter by Type</div>
+                      {categoryTypeFilters[category_key]?.length > 0 && (
+                        <button
+                          onClick={() => setCategoryTypeFilters((prev) => ({ ...prev, [category_key]: [] }))}
+                          className="w-full text-xs px-2 py-1 mb-1 bg-blue-100 text-blue-600 rounded hover:bg-blue-200"
+                        >
+                          Clear
+                        </button>
+                      )}
+                      <div
+                        className={`flex items-center gap-2 px-1 py-0.5 rounded cursor-pointer text-xs ${categoryTypeFilters[category_key]?.includes("unassigned") ? "bg-gray-200" : "hover:bg-gray-100"}`}
+                        onClick={() => {
+                          setCategoryTypeFilters((prev) => {
+                            const current = prev[category_key] || [];
+                            return {
+                              ...prev,
+                              [category_key]: current.includes("unassigned")
+                                ? current.filter((t) => t !== "unassigned")
+                                : [...current, "unassigned"],
+                            };
+                          });
+                        }}
+                      >
+                        <div className="w-3 h-3 rounded-full bg-gray-700" />
+                        <span className="flex-1 text-gray-500 italic">Unassigned</span>
+                        {categoryTypeFilters[category_key]?.includes("unassigned") && <span className="text-blue-500">✓</span>}
+                      </div>
+                      {Object.values(legendTypes).map((lt) => (
+                        <div
+                          key={lt.id}
+                          className={`flex items-center gap-2 px-1 py-0.5 rounded cursor-pointer text-xs ${categoryTypeFilters[category_key]?.includes(lt.id) ? "bg-gray-200" : "hover:bg-gray-100"}`}
+                          onClick={() => {
+                            setCategoryTypeFilters((prev) => {
+                              const current = prev[category_key] || [];
+                              return {
+                                ...prev,
+                                [category_key]: current.includes(lt.id)
+                                  ? current.filter((t) => t !== lt.id)
+                                  : [...current, lt.id],
+                              };
+                            });
+                          }}
+                        >
+                          <div className="w-3 h-3 rounded-full" style={{ backgroundColor: lt.color }} />
+                          <span className="flex-1">{lt.name}</span>
+                          {categoryTypeFilters[category_key]?.includes(lt.id) && <span className="text-blue-500">✓</span>}
+                        </div>
+                      ))}
+                    </div>
+                  )}
 
                   {/* Ideas inside category (scrollable) */}
                   <div
@@ -990,12 +1649,39 @@ export default function IdeaBinV2() {
                     className="flex-1 overflow-y-auto overflow-x-hidden"
                     onMouseDown={(e) => e.stopPropagation()}
                   >
-                    {catIdeas.map((ideaId, arrayIndex) =>
-                      renderIdeaItem(ideaId, arrayIndex, {
-                        type: "category",
-                        id: category_key,
+                    {catIdeas
+                      .filter((ideaId) => {
+                        // Apply both global and category filters
+                        const idea = ideas[ideaId];
+                        if (!idea) return false;
+                        
+                        // Check global filter
+                        if (globalTypeFilter.length > 0) {
+                          if (globalTypeFilter.includes("unassigned") && !idea.legend_type_id) {
+                            // passes global filter
+                          } else if (idea.legend_type_id && globalTypeFilter.includes(idea.legend_type_id)) {
+                            // passes global filter
+                          } else {
+                            return false;
+                          }
+                        }
+                        
+                        // Check category filter
+                        const catFilter = categoryTypeFilters[category_key] || [];
+                        if (catFilter.length > 0) {
+                          if (catFilter.includes("unassigned") && !idea.legend_type_id) return true;
+                          if (idea.legend_type_id && catFilter.includes(idea.legend_type_id)) return true;
+                          return false;
+                        }
+                        
+                        return true;
                       })
-                    )}
+                      .map((ideaId, arrayIndex) =>
+                        renderIdeaItem(ideaId, arrayIndex, {
+                          type: "category",
+                          id: category_key,
+                        })
+                      )}
                   </div>
                 </div>
               );
@@ -1004,7 +1690,7 @@ export default function IdeaBinV2() {
         </div>
       </div>
 
-      {/* GHOST (dragging indicator - rendered outside main layout) */}
+      {/* GHOST (dragging indicator - rendered outside main layout, always on top) */}
       {dragging && (
         <div
           style={{
@@ -1012,12 +1698,32 @@ export default function IdeaBinV2() {
             left: `${dragging.x}px`,
             transform: "translate(-50%, -100%)",
             pointerEvents: "none",
+            zIndex: 9999,
           }}
-          className="fixed max-w-60 shadow border border-white/20 shadow-gray-700 bg-black rounded text-white px-2 py-1 flex items-center text-xs z-50 truncate"
+          className="fixed max-w-60 shadow-lg border border-gray-200 bg-white rounded text-gray-800 px-2 py-1.5 flex items-center text-xs"
         >
-          {dragging.idea.title}
+          <span className="whitespace-pre-wrap line-clamp-2">
+            {dragging.idea.headline && <span className="font-semibold">{dragging.idea.headline}: </span>}
+            {dragging.idea.title}
+          </span>
         </div>
       )}
+
+      {/* LEGEND DRAG GHOST */}
+      {draggingLegend && (
+        <div
+          style={{
+            top: `${draggingLegend.y}px`,
+            left: `${draggingLegend.x}px`,
+            transform: "translate(-50%, -50%)",
+            pointerEvents: "none",
+            zIndex: 9999,
+            backgroundColor: draggingLegend.color,
+          }}
+          className="fixed w-8 h-8 rounded-full shadow-lg border-2 border-white"
+        />
+      )}
+
     </>
   );
-}
+} 

@@ -1,5 +1,5 @@
 // import DragTasks from "./pages/DragTasks"
-// import IdeaBinV2 from "./pages/IdeaBin"
+import IdeaBin from "./pages/IdeaBin"
 // import DragAndDropDemo from "./pages/DragAndDropDemo"
 import DependencyView from "./orgarhythmus/DependencyView"
 // import Merging from "./pages/Merging"
@@ -10,8 +10,9 @@ export default function App() {
     <>
       {/* <DragTasks /> */}
       {/* <IdeaBin /> */}
-      {/* <IdeaBinV2/> */}
-      <DependencyView/>
+      <IdeaBin/>
+
+      {/* <DependencyView/> */}
       {/* <Merging/> */}
       {/* <DragAndDropDemo /> */}
     </>
